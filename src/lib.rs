@@ -1,4 +1,5 @@
 mod view;
+pub mod aws;
 
 use std::{io::{self, Stdout}, time::{Duration, Instant}, sync::mpsc::{self, Receiver}, thread, error::Error};
 use crossterm::{event::{self, Event as CEvent, KeyCode, KeyEvent}, terminal::enable_raw_mode};
@@ -7,6 +8,7 @@ use tui::{
     Terminal,
 };
 use view::screens::MainScreen;
+use aws::s3::Cli;
 
 enum Event<I> {
     Input(I),
@@ -14,12 +16,13 @@ enum Event<I> {
     Tick,
 }
 
-pub struct App {
-    main_screen: MainScreen,
+pub struct App<'a> {
+    client: &'a Cli,
+    main_screen: MainScreen<'a>,
     input_channel: Receiver<Event<KeyEvent>>,
 }
 
-impl App {
+impl<'a> App<'a> {
     fn spawn_sender() -> Receiver<Event<KeyEvent>> {
         let (tx, rx) = mpsc::channel();
         let tick_rate = Duration::from_millis(200);
@@ -62,18 +65,18 @@ impl App {
         Ok(terminal)
     }
 
-    pub fn new() -> App {
+    pub fn new(client: &'a Cli) -> App<'a> {
         let input_channel = App::spawn_sender();
         let terminal = App::capture_terminal().unwrap();
-        let main_screen = MainScreen::new(terminal);
-        App { main_screen, input_channel }
+        let main_screen = MainScreen::new(terminal, client);
+        App { client, main_screen, input_channel }
     }
 
-    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn run(&mut self) -> Result<(), Box<dyn Error>> {
         self.main_screen.render()?;
         loop {
             match self.input_channel.recv().unwrap() {
-                Event::Input(event) => self.handle_key(event),
+                Event::Input(event) => self.handle_key(event).await,
                 Event::Shutdown => {
                     self.main_screen.shutdown()?;
                     break;
@@ -84,8 +87,8 @@ impl App {
         Ok(())
     }
 
-    fn handle_key(&mut self, key_event: KeyEvent) {
-            self.main_screen.handle_event(key_event);
+    async fn handle_key(&mut self, key_event: KeyEvent) {
+            self.main_screen.handle_event(key_event).await;
             self.main_screen.render().unwrap()
     }
 }

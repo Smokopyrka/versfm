@@ -5,6 +5,7 @@ pub enum Selection {
     Normal,
     Move,
     Delete,
+    Copy,
 }
 pub struct ListOption<T> 
 where T: PartialEq {
@@ -53,6 +54,10 @@ where T: PartialEq {
             state.select(Some(0));
         }
         StatefulList { state: state, items: list_items}
+    }
+
+    pub fn get(&self, i: usize) -> &ListOption<T> {
+        &self.items[i]
     }
 
     pub fn get_items(&self) -> &[ListOption<T>] {

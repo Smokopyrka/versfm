@@ -8,3 +8,7 @@ edition = "2021"
 [dependencies]
 tui = "0.17.0"
 crossterm = "0.23.0"
+rusoto_core = "0.47.0"
+rusoto_s3 = "0.47.0"
+tokio = "1.16.1"
+chrono = "0.4.19"

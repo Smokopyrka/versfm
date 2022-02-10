@@ -1,4 +1,4 @@
-use std::{io::Stdout, error::Error};
+use std::{io::Stdout, error::Error, path::Path};
 use crossterm::{
     terminal::{
         disable_raw_mode,
@@ -12,22 +12,27 @@ use tui::{
     layout::{Layout, Constraint, Direction}, style::{Style, Color, Modifier}};
 
 use crate::view::utils::{StatefulList, ListOption, Selection};
+use crate::aws::s3::Cli;
+
+const BUCKET_NAME: &str = "test-bucket";
 
 enum CurrentList {
     LeftList,
     RightList,
 }
 
-pub struct MainScreen {
+pub struct MainScreen<'clilife> {
+    client: &'clilife Cli,
     term: Terminal<CrosstermBackend<Stdout>>,
     curr_list: CurrentList,
     l_list: StatefulList<String>,
     r_list: StatefulList<String>,
 }
 
-impl MainScreen {
+impl<'clilife> MainScreen<'clilife> {
 
-    pub fn new(term:Terminal<CrosstermBackend<Stdout>>) -> MainScreen {
+    pub fn new(term:Terminal<CrosstermBackend<Stdout>>, client: &'clilife Cli) -> MainScreen {
+
         let l_items = vec![
         String::from("Item 1"),
         String::from("Item 2"),
@@ -45,6 +50,7 @@ impl MainScreen {
         let r_list = StatefulList::with_items(r_items);
         
         MainScreen {
+            client: client,
             term: term,
             curr_list: CurrentList::LeftList,
             l_list: l_list,
@@ -52,12 +58,21 @@ impl MainScreen {
         }
     }
 
-    pub fn handle_event(&mut self, event: KeyEvent) {
+    pub async fn populate_s3_list(&mut self, bucket_name: &str) {
+        let items = self.client.list_objects(bucket_name).await;
+        self.l_list = StatefulList::with_items(
+            items.into_iter()
+            .map(move |i| i.name)
+            .collect());
+    }
+
+    pub async fn handle_event(&mut self, event: KeyEvent) {
         let curr_list = self.get_curr_list();
 
         match event.code {
             KeyCode::Enter => {
                 self.move_items();
+                self.copy_items().await;
                 self.delete_items();
             },
             KeyCode::Down | KeyCode::Char('j') => {
@@ -75,24 +90,42 @@ impl MainScreen {
             KeyCode::Char('m') => {
                 curr_list.select(Selection::Move);
             }
+            KeyCode::Char('c') => {
+                curr_list.select(Selection::Copy);
+            }
             KeyCode::Char('d') => {
                 curr_list.select(Selection::Delete);
+            }
+            KeyCode::Char('r') => {
+                self.populate_s3_list(BUCKET_NAME).await;
             }
             _ => ()
         }
     }
 
-    fn move_items(&mut self) {
-        MainScreen::move_items_between_lists(&mut self.l_list, &mut self.r_list);
-        MainScreen::move_items_between_lists(&mut self.r_list, &mut self.l_list);
-    }
-
-    fn move_items_between_lists(from: &mut StatefulList<String>, to: &mut StatefulList<String>) {
-        let selected: Vec<String> = from.get_selected(Selection::Move).iter_mut()
+    async fn copy_items(&mut self) {
+        let l_selected: Vec<String> = self.l_list.get_selected(Selection::Copy).iter_mut()
             .map(|x| x.clone())
             .collect();
+        for item in l_selected {
+            self.client.download_object(BUCKET_NAME, item.as_str(), Path::new(item.as_str())).await;
+            self.r_list.add(item);
+        }
+    }
 
-        for item in selected {
+    fn move_items(&mut self) {
+        let l_selected: Vec<String> = self.l_list.get_selected(Selection::Move).iter_mut()
+            .map(|x| x.clone())
+            .collect();
+        MainScreen::move_items_between_lists(l_selected,&mut self.l_list, &mut self.r_list);
+        let r_selected: Vec<String> = self.r_list.get_selected(Selection::Move).iter_mut()
+            .map(|x| x.clone())
+            .collect();
+        MainScreen::move_items_between_lists(r_selected, &mut self.r_list, &mut self.l_list);
+    }
+
+    fn move_items_between_lists(items: Vec<String>, from: &mut StatefulList<String>, to: &mut StatefulList<String>) {
+        for item in items {
             from.remove(&item);
             to.add(item);
         }
@@ -176,6 +209,7 @@ fn transform_list(options: &[ListOption<String>]) -> Vec<ListItem> {
         match o.selected() {
             Selection::Move => style = style.bg(Color::LightBlue),
             Selection::Delete => style = style.bg(Color::Red),
+            Selection::Copy => style = style.bg(Color::LightGreen),
             _ => ()
         }
         ListItem::new(text).style(style)
