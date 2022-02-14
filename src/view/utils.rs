@@ -1,66 +1,82 @@
 use tui::widgets::ListState;
 
 #[derive(PartialEq)]
-pub enum Selection {
-    Normal,
-    Move,
-    Delete,
-    Copy,
-}
-pub struct ListOption<T> 
-where T: PartialEq {
-    value: T,
-    selected: Selection,
+pub enum State {
+    Unselected,
+    ToMove,
+    ToDelete,
+    ToCopy,
 }
 
-impl<T> ListOption<T> 
-where T: PartialEq {
-    fn new(value: T) -> ListOption<T> {
-        ListOption { value: value, selected: Selection::Normal }
+pub enum Kind {
+    File,
+    Directory,
+}
+pub struct ListOption {
+    value: String,
+    state: State,
+    kind: Kind,
+}
+
+impl ListOption {
+    fn new(value: String, kind: Kind) -> ListOption {
+        ListOption {
+            value,
+            state: State::Unselected,
+            kind,
+        }
     }
 
-    pub fn value(&self) -> &T {
+    pub fn value(&self) -> &String {
         &self.value
     }
 
-    pub fn selected(&self) -> &Selection {
-        &self.selected
+    pub fn selected(&self) -> &State {
+        &self.state
     }
-    
-    fn select(&mut self, new: Selection) {
-        self.selected = match self.selected {
-            Selection::Normal => new,
-            _ => Selection::Normal
+
+    pub fn kind(&self) -> &Kind {
+        &self.kind
+    }
+
+    fn select(&mut self, new: State) {
+        self.state = match self.state {
+            State::Unselected => new,
+            _ => State::Unselected,
         }
     }
 }
 
-pub struct StatefulList<T>
-where T: PartialEq {
+pub struct StatefulList {
     state: ListState,
-    items: Vec<ListOption<T>>,
+    items: Vec<ListOption>,
 }
 
-impl<T> StatefulList<T>
-where T: PartialEq {
-
-    pub fn with_items(items: Vec<T>) -> StatefulList<T> {
-        let mut list_items: Vec<ListOption<T>> = Vec::with_capacity(items.len() as usize);
+impl StatefulList {
+    pub fn with_items(items: Vec<String>) -> StatefulList {
+        let mut list_items: Vec<ListOption> = Vec::with_capacity(items.len() as usize);
         for item in items {
-            list_items.push(ListOption::new(item));
+            if item.chars().last().unwrap() == '/' {
+                list_items.push(ListOption::new(item, Kind::Directory));
+            } else {
+                list_items.push(ListOption::new(item, Kind::File));
+            }
         }
         let mut state = ListState::default();
         if list_items.len() > 0 {
             state.select(Some(0));
         }
-        StatefulList { state: state, items: list_items}
+        StatefulList {
+            state: state,
+            items: list_items,
+        }
     }
 
-    pub fn get(&self, i: usize) -> &ListOption<T> {
+    pub fn get(&self, i: usize) -> &ListOption {
         &self.items[i]
     }
 
-    pub fn get_items(&self) -> &[ListOption<T>] {
+    pub fn get_items(&self) -> &[ListOption] {
         self.items.as_slice()
     }
 
@@ -74,21 +90,20 @@ where T: PartialEq {
         } else {
             self.state.select(None);
         }
-
     }
 
     pub fn next(&mut self) {
         if self.items.len() > 0 {
             let i = match self.state.selected() {
-                    Some(i) => {
-                        if i >= self.items.len() - 1 {
-                            0
-                        } else {
-                            i + 1
-                        }
-                    },
-                    None => 0,
-                };
+                Some(i) => {
+                    if i >= self.items.len() - 1 {
+                        0
+                    } else {
+                        i + 1
+                    }
+                }
+                None => 0,
+            };
 
             self.state.select(Some(i));
         }
@@ -97,40 +112,47 @@ where T: PartialEq {
     pub fn prev(&mut self) {
         if self.items.len() > 0 {
             let i = match self.state.selected() {
-                    Some(i) => {
-                        if i == 0 {
-                            self.items.len() - 1
-                        } else {
-                            i - 1
-                        }
-                    },
-                    None => 0,
-                };
+                Some(i) => {
+                    if i == 0 {
+                        self.items.len() - 1
+                    } else {
+                        i - 1
+                    }
+                }
+                None => 0,
+            };
 
             self.state.select(Some(i));
         }
     }
 
-    pub fn select(&mut self, sel_type: Selection) {
+    pub fn select(&mut self, sel_type: State) {
         match self.state.selected() {
             None => (),
-            Some(i) => self.items[i].select(sel_type),
+            Some(i) => {
+                let obj = self.items.get_mut(i).unwrap();
+                match obj.kind {
+                    Kind::File => obj.select(sel_type),
+                    Kind::Directory => (),
+                }
+            }
         };
     }
 
-    pub fn get_selected(&self, sel_type: Selection) -> Vec<&T> {
-        self.items.iter()
+    pub fn get_selected(&self, sel_type: State) -> Vec<&String> {
+        self.items
+            .iter()
             .filter(|i| *i.selected() == sel_type)
             .map(|i| i.value())
             .collect()
     }
 
-    pub fn add(&mut self, item: T) {
-        self.items.push(ListOption::new(item));
+    pub fn add(&mut self, item: String, kind: Kind) {
+        self.items.push(ListOption::new(item, kind));
         self.reset_cursor();
     }
 
-    pub fn remove(&mut self, item: &T) {
+    pub fn remove(&mut self, item: &String) {
         let mut to_remove: Option<usize> = None;
         for (i, val) in self.items.iter().enumerate() {
             if val.value() == item {
@@ -142,5 +164,4 @@ where T: PartialEq {
         }
         self.reset_cursor();
     }
-
 }

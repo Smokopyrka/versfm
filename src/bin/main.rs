@@ -1,12 +1,14 @@
+use std::env;
 use std::error::Error;
 
-use s3tui::App;
 use s3tui::aws::s3::Cli;
+use s3tui::App;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let client = Cli::new().await;
-    let mut app = App::new(&client);
+    let args: Vec<String> = env::args().collect();
+    let client = Cli::new(args[1].as_str()).await;
+    let mut app = App::new(&client).await;
     app.run().await?;
     Ok(())
 }

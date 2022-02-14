@@ -1,14 +1,20 @@
-mod view;
 pub mod aws;
+mod view;
 
-use std::{io::{self, Stdout}, time::{Duration, Instant}, sync::mpsc::{self, Receiver}, thread, error::Error};
-use crossterm::{event::{self, Event as CEvent, KeyCode, KeyEvent}, terminal::enable_raw_mode};
-use tui::{
-    backend::{CrosstermBackend},
-    Terminal,
-};
-use view::screens::MainScreen;
 use aws::s3::Cli;
+use crossterm::{
+    event::{self, Event as CEvent, KeyCode, KeyEvent},
+    terminal::enable_raw_mode,
+};
+use std::{
+    error::Error,
+    io::{self, Stdout},
+    sync::mpsc::{self, Receiver},
+    thread,
+    time::{Duration, Instant},
+};
+use tui::{backend::CrosstermBackend, Terminal};
+use view::screens::MainScreen;
 
 enum Event<I> {
     Input(I),
@@ -37,11 +43,11 @@ impl<'a> App<'a> {
 
                 if event::poll(timeout).expect("timeout") {
                     if let CEvent::Key(key) = event::read().expect("key") {
-                            if key.code == KeyCode::Esc {
-                                tx.send(Event::Shutdown).expect("Can send events");
-                            } else {
-                                tx.send(Event::Input(key)).expect("Can send events");
-                            }
+                        if key.code == KeyCode::Esc {
+                            tx.send(Event::Shutdown).expect("Can send events");
+                        } else {
+                            tx.send(Event::Input(key)).expect("Can send events");
+                        }
                     }
                 }
 
@@ -65,11 +71,15 @@ impl<'a> App<'a> {
         Ok(terminal)
     }
 
-    pub fn new(client: &'a Cli) -> App<'a> {
+    pub async fn new(client: &'a Cli) -> App<'a> {
         let input_channel = App::spawn_sender();
         let terminal = App::capture_terminal().unwrap();
-        let main_screen = MainScreen::new(terminal, client);
-        App { client, main_screen, input_channel }
+        let main_screen = MainScreen::new(terminal, client).await;
+        App {
+            client,
+            main_screen,
+            input_channel,
+        }
     }
 
     pub async fn run(&mut self) -> Result<(), Box<dyn Error>> {
@@ -81,14 +91,14 @@ impl<'a> App<'a> {
                     self.main_screen.shutdown()?;
                     break;
                 }
-                Event::Tick => ()
+                Event::Tick => (),
             }
         }
         Ok(())
     }
 
     async fn handle_key(&mut self, key_event: KeyEvent) {
-            self.main_screen.handle_event(key_event).await;
-            self.main_screen.render().unwrap()
+        self.main_screen.handle_event(key_event).await;
+        self.main_screen.render().unwrap()
     }
 }
