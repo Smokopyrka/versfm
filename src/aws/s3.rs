@@ -12,15 +12,19 @@ use rusoto_s3::{
 };
 use tokio::io::AsyncReadExt;
 
-#[derive(Debug)]
+use super::{Kind};
+
+#[derive(Clone)]
 pub struct S3Object {
     pub name: String,
     pub prefix: String,
+    pub kind: Kind,
     pub size: i64,
     pub last_mod: DateTime<Utc>,
     pub storage_class: String,
     pub owner: Option<String>,
 }
+
 pub struct Cli {
     pub bucket_name: String,
     s3_client: S3Client,
@@ -69,9 +73,16 @@ impl Cli {
             .map(|i| {
                 let key = i.key.clone().unwrap();
                 let (prefix, file_name) = key.split_at(prefix.len());
+                let kind: Kind;
+                if file_name.chars().last().unwrap() == '/' {
+                    kind = Kind::Directory;
+                } else {
+                    kind = Kind::File;
+                }
                 S3Object {
                     name: String::from(file_name),
                     prefix: String::from(prefix),
+                    kind,
                     size: i.size.unwrap(),
                     last_mod: DateTime::parse_from_rfc3339(i.last_modified.unwrap().as_str())
                         .unwrap()
