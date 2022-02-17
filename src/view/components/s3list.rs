@@ -1,19 +1,22 @@
-use crate::aws::{s3::{Cli, S3Object}, Kind};
-use super::{FileCRUD, SelectableContainer, StatefulContainer, State, ListEntry, FileEntry};
+use std::{sync::Arc, pin::Pin};
+
+use crate::providers::{s3::{S3Provider, S3Object}, Kind};
+use super::{FileCRUD, SelectableContainer, StatefulContainer, State, ListEntry, FileEntry, BoxedByteStream};
 
 use async_trait::async_trait;
+use rusoto_core::ByteStream;
 use tui::widgets::ListState;
-use tokio_stream::{self, Stream};
+use futures::stream::Stream;
 
-pub struct S3List<'clilife> {
-    client: &'clilife Cli,
+pub struct S3List {
+    client: Arc<S3Provider>,
     s3_prefix: Option<String>,
-    items: Vec<ListEntry<S3Object>>,
+    items: Vec<Box<ListEntry<S3Object>>>,
     state: ListState,
 }
 
-impl<'clilife> S3List<'clilife> {
-    pub fn new(client: &'clilife Cli) -> S3List {
+impl S3List {
+    pub fn new(client: Arc<S3Provider>) -> S3List {
         S3List {
             client,
             s3_prefix: None,
@@ -22,24 +25,20 @@ impl<'clilife> S3List<'clilife> {
         }
     }
 
-    pub fn get_bucket_name(&self) -> &str {
-        &self.client.bucket_name
+    fn add_prefix(&self, to: &str) -> String {
+        match &self.s3_prefix {
+            Some(prefix) => format!("{}{}", prefix, to),
+            None => String::from(to),
+        }
+        
     }
 }
 
-impl<'clilife> StatefulContainer for S3List<'clilife> {
+impl StatefulContainer for S3List {
 
     fn get_current(&self) -> ListState {
         self.state.clone()
     }
-
-    // fn reset_cursor(&mut self) {
-    //     if self.items.len() > 0 {
-    //         self.state.select(Some(0));
-    //     } else {
-    //         self.state.select(None);
-    //     }
-    // }
 
     fn next(&mut self) {
         if self.items.len() > 0 {
@@ -76,14 +75,14 @@ impl<'clilife> StatefulContainer for S3List<'clilife> {
     }
 }
 
-impl<'clilife> SelectableContainer<FileEntry> for S3List<'clilife> {
+impl SelectableContainer<Box<dyn FileEntry>> for S3List {
 
-    fn get(&self, i: usize) -> ListEntry<FileEntry> {
-        ListEntry::from(&self.items[i])
+    fn get(&self, i: usize) -> ListEntry<Box<dyn FileEntry>> {
+        ListEntry::from(self.items[i].clone())
     }
 
-    fn get_items(&self) -> Vec<ListEntry<FileEntry>> {
-        self.items.iter().map(|i| ListEntry::from(i)).collect()
+    fn get_items(&self) -> Vec<ListEntry<Box<dyn FileEntry>>> {
+        self.items.iter().map(|i| ListEntry::from(i.clone())).collect()
     }
 
     fn select(&mut self, selection: State) {
@@ -99,36 +98,46 @@ impl<'clilife> SelectableContainer<FileEntry> for S3List<'clilife> {
         };
     }
 
-    fn get_selected(&mut self, selection: State) -> Vec<FileEntry> {
-        self.get_items()
-            .into_iter()
-            .filter(|i| matches!(i.selected(), selection))
-            .map(|i| i.value)
-            .collect()
+    fn get_selected(&mut self, selection: State) -> Vec<Box<dyn FileEntry>> {
+        let files: Vec<S3Object> = self.items
+            .iter()
+            .filter(|i| *i.selected() == selection)
+            .map(|i| i.clone().value)
+            .collect();
+        let mut out: Vec<Box<dyn FileEntry>> = vec![];
+        for file in files {
+            out.push(Box::new(file));
+        }
+        out
     }
 }
 
 #[async_trait]
-impl<'clilife> FileCRUD for S3List<'clilife> {
+impl FileCRUD for S3List {
 
-    async fn get_file_stream(&mut self, file_name: &str) -> Box<dyn Stream<Item=u8>> {
-        let items: Vec<u8> = vec![1, 2, 3];
-        Box::new(tokio_stream::iter(items))
+    async fn get_file_stream(&mut self, file_name: &str) -> Pin<BoxedByteStream> {
+        Box::pin(self.client.download_object(&self.add_prefix(file_name)).await)
     }
 
-    async fn put_file(&mut self, file_name: &str, stream: Box<dyn Stream<Item=u8> + Send>) {
-        println!("dummy");
+    async fn put_file(&mut self, file_name: &str, stream: Pin<BoxedByteStream>) {
+        let size = stream.size_hint();
+        if let None = size.1 {
+            panic!("Stream must implement size hint in order to be
+            be sent to S3");
+        }
+        let content = ByteStream::new_with_size(stream, size.0);
+        self.client.put_object(&self.add_prefix(file_name), content).await;
     }
 
     async fn delete_file(&mut self, file_name: &str) {
-        ()
+        self.client.delete_object(&self.add_prefix(file_name)).await;
     }
     
     async fn refresh(&mut self) {
         let files: Vec<S3Object> = self.client.list_objects(self.s3_prefix.clone()).await;
         self.items = files
             .into_iter()
-            .map(|i| ListEntry::new(i))
+            .map(|i| Box::new(ListEntry::new(i)))
             .collect()
     }
 
@@ -139,4 +148,38 @@ impl<'clilife> FileCRUD for S3List<'clilife> {
             .collect()
     }
 
+    fn move_into_selected_dir(&mut self) {
+        let mut current = self.s3_prefix.clone().unwrap_or(String::new());
+        match self.state.selected() {
+            None => (),
+            Some(i) => {
+                let selected = self.items[i].value.get_name();
+                if selected.chars().last().unwrap() == '/' {
+                    current.push_str(selected);
+                    self.s3_prefix = Some(current);
+                }
+            }
+        };
+    }
+
+    fn move_out_of_selected_dir(&mut self) {
+        self.s3_prefix = match &self.s3_prefix {
+            None => return,
+            Some(prefix) => prefix
+                .rmatch_indices('/')
+                .nth(1)
+                .map(|(i, _)| String::from(&prefix[..i + 1])),
+        };
+    }
+
+    fn get_current_path(&self) -> String {
+        match &self.s3_prefix {
+            Some(prefix) => prefix.clone(),
+            None => String::from("/"),
+        }
+    }
+
+    fn get_resource_name(&self) -> String {
+        self.client.bucket_name.clone()
+    }
 }

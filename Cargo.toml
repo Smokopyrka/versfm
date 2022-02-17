@@ -7,10 +7,13 @@ edition = "2021"
 
 [dependencies]
 tui = "0.17.0"
+whoami = "1.2.1"
 crossterm = "0.23.0"
 rusoto_core = "0.47.0"
 rusoto_s3 = "0.47.0"
+bytes = "1.1.0"
 tokio = "1.16.1"
 tokio-stream = "0.1.8"
+futures = "0.3.21"
 async-trait = "0.1.52"
 chrono = "0.4.19"

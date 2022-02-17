@@ -1,16 +1,11 @@
-use std::{
-    fs::File,
-    io::{Read, Write},
-    path::Path,
-};
-
 use chrono::{DateTime, Utc};
 use rusoto_core::{credential::ProfileProvider, ByteStream, HttpClient, Region};
 use rusoto_s3::{
     DeleteObjectRequest, GetObjectOutput, GetObjectRequest, ListObjectsV2Request, PutObjectRequest,
     S3Client, S3,
 };
-use tokio::io::AsyncReadExt;
+
+use crate::view::components::FileEntry;
 
 use super::{Kind};
 
@@ -25,14 +20,24 @@ pub struct S3Object {
     pub owner: Option<String>,
 }
 
-pub struct Cli {
+impl FileEntry for S3Object {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_kind(&self) -> &Kind {
+        &self.kind
+    }
+}
+
+pub struct S3Provider {
     pub bucket_name: String,
     s3_client: S3Client,
 }
 
-impl Cli {
-    pub async fn new(bucket_name: &str) -> Cli {
-        Cli {
+impl S3Provider {
+    pub async fn new(bucket_name: &str) -> S3Provider {
+        S3Provider {
             bucket_name: String::from(bucket_name),
             s3_client: S3Client::new_with(
                 HttpClient::new().unwrap(),
@@ -97,22 +102,12 @@ impl Cli {
             .collect()
     }
 
-    pub async fn download_object(&self, object_name: &str, path: &Path) {
+    pub async fn download_object(&self, object_name: &str) -> ByteStream {
         let object: GetObjectOutput = self.get_object(object_name).await;
-
-        let mut file = File::create(&path).unwrap();
-
-        let content_length: usize = object.content_length.unwrap() as usize;
-        let mut content = object.body.unwrap().into_async_read();
-
-        let mut output: Vec<u8> = Vec::with_capacity(content_length);
-        content.read_to_end(&mut output).await.unwrap();
-
-        file.write_all(&output).unwrap()
+        object.body.unwrap()
     }
 
     async fn get_object(&self, object_name: &str) -> GetObjectOutput {
-        println!("{}", object_name);
         let mut request = GetObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);
@@ -127,15 +122,16 @@ impl Cli {
         self.s3_client.delete_object(request).await.unwrap();
     }
 
-    pub async fn put_object(&self, object_name: &str, file_path: &Path) {
-        let mut file = File::open(file_path).unwrap();
-        let mut contents: Vec<u8> = Vec::new();
-        file.read_to_end(&mut contents).unwrap();
+    pub async fn put_object(&self, object_name: &str, content: ByteStream) {
+        // let mut file = File::open(file_path).unwrap();
+        // let mut contents: Vec<u8> = Vec::new();
+        // file.read_to_end(&mut contents).unwrap();
 
         let mut request = PutObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);
-        request.body = Some(ByteStream::from(contents));
+        // request.body = Some(ByteStream::from(contents));
+        request.body = Some(content);
 
         self.s3_client.put_object(request).await.unwrap();
     }
@@ -143,34 +139,32 @@ impl Cli {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use super::Cli;
+    use super::S3Provider;
     const BUCKET_NAME: &str = "s3tui-test-bucket";
 
     #[tokio::test]
     async fn list_objects_from_bucket() {
-        let cli = Cli::new(BUCKET_NAME).await;
+        let cli = S3Provider::new(BUCKET_NAME).await;
         let _objects = cli.list_objects(None).await;
     }
 
-    #[tokio::test]
-    async fn get_object_from_bucket() {
-        let cli = Cli::new(BUCKET_NAME).await;
-        cli.download_object("get-object-test.txt", Path::new("get-object-test.txt"))
-            .await;
-    }
+    // #[tokio::test]
+    // async fn get_object_from_bucket() {
+    //     let cli = Cli::new(BUCKET_NAME).await;
+    //     cli.download_object("get-object-test.txt", Path::new("get-object-test.txt"))
+    //         .await;
+    // }
 
     #[tokio::test]
     async fn remove_item_from_bucket() {
-        let cli = Cli::new(BUCKET_NAME).await;
+        let cli = S3Provider::new(BUCKET_NAME).await;
         cli.delete_object("delete-object-test.txt").await;
     }
 
-    #[tokio::test]
-    async fn put_item_into_bucket() {
-        let cli = Cli::new(BUCKET_NAME).await;
-        cli.put_object("put-object-test.txt", Path::new("put-object-test.txt"))
-            .await;
-    }
+    // #[tokio::test]
+    // async fn put_item_into_bucket() {
+    //     let cli = Cli::new(BUCKET_NAME).await;
+    //     cli.put_object("put-object-test.txt", Path::new("put-object-test.txt"))
+    //         .await;
+    // }
 }

@@ -1,7 +1,7 @@
-pub mod aws;
+pub mod providers;
 mod view;
 
-use aws::s3::Cli;
+use providers::s3::S3Provider;
 use crossterm::{
     event::{self, Event as CEvent, KeyCode, KeyEvent},
     terminal::enable_raw_mode,
@@ -9,12 +9,18 @@ use crossterm::{
 use std::{
     error::Error,
     io::{self, Stdout},
-    sync::mpsc::{self, Receiver},
+    sync::{mpsc::{self, Receiver}, Arc},
     thread,
     time::{Duration, Instant},
 };
 use tui::{backend::CrosstermBackend, Terminal};
 use view::screens::MainScreen;
+
+#[derive(Clone)]
+pub enum Kind {
+    File,
+    Directory,
+}
 
 enum Event<I> {
     Input(I),
@@ -22,13 +28,12 @@ enum Event<I> {
     Tick,
 }
 
-pub struct App<'a> {
-    client: &'a Cli,
-    main_screen: MainScreen<'a>,
+pub struct App {
+    main_screen: MainScreen,
     input_channel: Receiver<Event<KeyEvent>>,
 }
 
-impl<'a> App<'a> {
+impl App {
     fn spawn_sender() -> Receiver<Event<KeyEvent>> {
         let (tx, rx) = mpsc::channel();
         let tick_rate = Duration::from_millis(200);
@@ -71,12 +76,11 @@ impl<'a> App<'a> {
         Ok(terminal)
     }
 
-    pub async fn new(client: &'a Cli) -> App<'a> {
+    pub async fn new(client: Arc<S3Provider>) -> App {
         let input_channel = App::spawn_sender();
         let terminal = App::capture_terminal().unwrap();
-        let main_screen = MainScreen::new(terminal, client).await;
+        let main_screen = MainScreen::new(terminal, client.clone()).await;
         App {
-            client,
             main_screen,
             input_channel,
         }
