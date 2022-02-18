@@ -1,11 +1,11 @@
 use std::{sync::Arc, pin::Pin};
 
 use crate::providers::{s3::{S3Provider, S3Object}, Kind};
-use super::{FileCRUD, SelectableContainer, StatefulContainer, State, ListEntry, FileEntry, BoxedByteStream};
+use super::{FileCRUD, SelectableContainer, StatefulContainer, State, ListEntry, FileEntry, BoxedByteStream, TuiDisplay};
 
 use async_trait::async_trait;
 use rusoto_core::ByteStream;
-use tui::widgets::ListState;
+use tui::{widgets::{ListState, Block, Borders, List}, style::{Style, Color, Modifier}};
 use futures::stream::Stream;
 
 pub struct S3List {
@@ -32,6 +32,7 @@ impl S3List {
         }
         
     }
+
 }
 
 impl StatefulContainer for S3List {
@@ -175,11 +176,32 @@ impl FileCRUD for S3List {
     fn get_current_path(&self) -> String {
         match &self.s3_prefix {
             Some(prefix) => prefix.clone(),
-            None => String::from("/"),
+            None => String::new(),
         }
     }
 
     fn get_resource_name(&self) -> String {
         self.client.bucket_name.clone()
     }
+    
+}
+
+impl TuiDisplay for S3List {
+    fn make_file_list(&self, is_focused: bool) -> List {
+        let mut style = Style::default().fg(Color::White);
+        if is_focused {
+            style = style.fg(Color::LightBlue);
+        }
+        let block = Block::default()
+            .title(format!("{}@S3:/{}", self.get_resource_name(), self.get_current_path()))
+            .style(style)
+            .borders(Borders::ALL);
+        let items = super::transform_list(&self.items);
+        List::new(items)
+            .block(block)
+            .style(Style::default().fg(Color::White))
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+            .highlight_symbol("> ")
+    }
+
 }

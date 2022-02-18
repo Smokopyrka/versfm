@@ -9,7 +9,7 @@ mod filesystem_list;
 
 pub use s3list::S3List;
 pub use filesystem_list::{FilesystemList};
-use tui::widgets::ListState;
+use tui::{widgets::{ListState, List, ListItem}, style::{Style, Modifier, Color}};
 
 use crate::providers::{Kind};
 
@@ -94,5 +94,32 @@ pub trait FileCRUD {
     fn get_resource_name(&self) -> String;
 }
 
-pub trait FileList: StatefulContainer + SelectableContainer<Box<dyn FileEntry>> + FileCRUD {}
-impl<T> FileList for T where T: StatefulContainer + SelectableContainer<Box<dyn FileEntry>> + FileCRUD {}
+pub trait TuiDisplay {
+    fn make_file_list(&self, is_focused: bool) -> List;
+    // fn transform_list(options: &[ListEntry<Box<dyn FileEntry>>]) -> Vec<ListItem> {
+}
+
+fn transform_list<T>(options: &[Box<ListEntry<T>>]) -> Vec<ListItem> 
+where T: FileEntry {
+    options
+        .iter()
+        .map(|o| {
+            let text = o.value().get_name();
+            let mut style = Style::default();
+
+            if let Kind::Directory = o.value().get_kind() {
+                style = style.add_modifier(Modifier::ITALIC);
+            }
+            match o.selected() {
+                State::ToMove => style = style.bg(Color::LightBlue),
+                State::ToDelete => style = style.bg(Color::Red),
+                State::ToCopy => style = style.bg(Color::LightGreen),
+                _ => (),
+            }
+            ListItem::new(text).style(style)
+        })
+        .collect()
+}
+
+pub trait FileList: StatefulContainer + SelectableContainer<Box<dyn FileEntry>> + FileCRUD + TuiDisplay {}
+impl<T> FileList for T where T: StatefulContainer + SelectableContainer<Box<dyn FileEntry>> + FileCRUD + TuiDisplay {}

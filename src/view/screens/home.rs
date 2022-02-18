@@ -11,13 +11,10 @@ use std::{
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListItem},
     Terminal,
 };
 
-use crate::view::components::{S3List, FileCRUD, ListEntry, State, FilesystemList, FileEntry, FileList};
-use crate::providers::{Kind};
+use crate::view::components::{S3List, FileCRUD, State, FilesystemList, FileEntry, FileList};
 use crate::{providers::s3::S3Provider};
 
 
@@ -150,62 +147,16 @@ impl MainScreen {
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                 .split(f.size());
 
-            let list_items = self.s3_list.get_items();
-            let s3_pane_name = format!("{}:{}", self.s3_list.get_resource_name(), self.s3_list.get_current_path());
-            let list = make_file_list(
-                &s3_pane_name,
-                &list_items,
-                matches!(self.curr_list, CurrentList::LeftList),
-            );
-            f.render_stateful_widget(list, chunks[0], &mut self.s3_list.get_current());
+            f.render_stateful_widget(
+                self.s3_list.make_file_list(matches!(self.curr_list, CurrentList::LeftList)),
+                chunks[0],
+                &mut self.s3_list.get_current());
 
-            let list_items = self.fs_list.get_items();
-            let fs_pane_name = format!("{}:{}", self.fs_list.get_resource_name(), self.fs_list.get_current_path());
-            let list = make_file_list(
-                &fs_pane_name,
-                &list_items,
-                matches!(self.curr_list, CurrentList::RightList),
-            );
-            f.render_stateful_widget(list, chunks[1], &mut self.fs_list.get_current());
+            f.render_stateful_widget(
+                self.fs_list.make_file_list(matches!(self.curr_list, CurrentList::LeftList)),
+                chunks[1],
+                &mut self.fs_list.get_current());
         })?;
         Ok(())
     }
-}
-
-fn make_file_list<'a>(name: &'a str, items: &'a [ListEntry<Box<dyn FileEntry>>], is_focused: bool) -> List<'a> {
-    let mut style = Style::default().fg(Color::White);
-    if is_focused {
-        style = style.fg(Color::LightBlue);
-    }
-    let block = Block::default()
-        .title(name)
-        .style(style)
-        .borders(Borders::ALL);
-    let items = transform_list(items);
-    List::new(items)
-        .block(block)
-        .style(Style::default().fg(Color::White))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-        .highlight_symbol("> ")
-}
-
-fn transform_list(options: &[ListEntry<Box<dyn FileEntry>>]) -> Vec<ListItem> {
-    options
-        .iter()
-        .map(|o| {
-            let text = o.value().get_name();
-            let mut style = Style::default();
-
-            if let Kind::Directory = o.value().get_kind() {
-                style = style.add_modifier(Modifier::ITALIC);
-            }
-            match o.selected() {
-                State::ToMove => style = style.bg(Color::LightBlue),
-                State::ToDelete => style = style.bg(Color::Red),
-                State::ToCopy => style = style.bg(Color::LightGreen),
-                _ => (),
-            }
-            ListItem::new(text).style(style)
-        })
-        .collect()
 }

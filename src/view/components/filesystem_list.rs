@@ -1,11 +1,11 @@
 use std::{path::{PathBuf, Path}, env, fs, pin::Pin};
 
 use async_trait::async_trait;
-use tui::widgets::ListState;
+use tui::{widgets::{ListState, Block, Borders, List}, style::{Color, Style, Modifier}};
 
 use crate::providers::{Kind, filesystem::{FilesystemObject, self}};
 
-use super::{ListEntry, State, SelectableContainer, FileCRUD, StatefulContainer, FileEntry, BoxedByteStream};
+use super::{ListEntry, State, SelectableContainer, FileCRUD, StatefulContainer, FileEntry, BoxedByteStream, TuiDisplay};
 
 
 impl FileEntry for FilesystemObject {
@@ -165,8 +165,13 @@ impl FileCRUD for FilesystemList {
             None => (),
             Some(i) => {
                 let selected = self.items[i].value.get_name();
-                let path = &format!("{}/{}", current, selected);
-                let path = Path::new(path);
+                let path;
+                if current.chars().last().unwrap() == '/' {
+                    path = format!("{}{}", current, selected);
+                } else {
+                    path = format!("{}/{}", current, selected);
+                }
+                let path = Path::new(&path);
                 if fs::metadata(path).unwrap().is_dir() {
                     self.curr_path = path.to_path_buf();
                 }
@@ -181,4 +186,24 @@ impl FileCRUD for FilesystemList {
     fn get_resource_name(&self) -> String {
         whoami::username()
     }
+}
+
+impl TuiDisplay for FilesystemList {
+    fn make_file_list(&self, is_focused: bool) -> List {
+        let mut style = Style::default().fg(Color::White);
+        if is_focused {
+            style = style.fg(Color::LightBlue);
+        }
+        let block = Block::default()
+            .title(format!("{}@local:{}", self.get_resource_name(), self.get_current_path()))
+            .style(style)
+            .borders(Borders::ALL);
+        let items = super::transform_list(&self.items);
+        List::new(items)
+            .block(block)
+            .style(Style::default().fg(Color::White))
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+            .highlight_symbol("> ")
+    }
+
 }

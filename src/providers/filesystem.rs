@@ -58,7 +58,7 @@ pub fn get_files_list(path: &Path) -> Vec<FilesystemObject> {
             let path = f.unwrap().path();
             let mut file_name = String::from(path.file_name().unwrap().to_str().unwrap());
             let kind: Kind;
-            if !fs::metadata(&path).unwrap().is_file() {
+            if fs::metadata(&path).unwrap().is_dir() {
                 file_name.push_str("/");
                 kind = Kind::Directory
             } else {
