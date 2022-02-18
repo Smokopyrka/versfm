@@ -1,4 +1,11 @@
-use std::{task::Poll, fs::{File, self}, io::{BufReader, BufRead, self, BufWriter, Write}, self, path::{PathBuf, Path}, borrow::Borrow};
+use std::{
+    self,
+    borrow::Borrow,
+    fs::{self, File},
+    io::{self, BufRead, BufReader, BufWriter, Write},
+    path::{Path, PathBuf},
+    task::Poll,
+};
 
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
@@ -14,7 +21,7 @@ pub struct FilesystemObject {
 
 pub struct FileBytesStream {
     reader: BufReader<File>,
-    size: usize, 
+    size: usize,
 }
 
 impl FileBytesStream {
@@ -30,7 +37,10 @@ impl FileBytesStream {
 impl Stream for FileBytesStream {
     type Item = Result<Bytes, io::Error>;
 
-    fn poll_next(mut self: std::pin::Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
         match self.reader.fill_buf() {
             Ok(bytes_read) => {
                 let consumed = bytes_read.len();
@@ -79,7 +89,9 @@ pub fn get_file_byte_stream(path: &Path) -> FileBytesStream {
 }
 
 pub async fn write_file_from_stream<S>(path: &Path, stream: S)
-where S: Stream<Item=Result<Bytes, io::Error>> + Send + 'static {
+where
+    S: Stream<Item = Result<Bytes, io::Error>> + Send + 'static,
+{
     let mut writer = BufWriter::new(File::create(path).unwrap());
     let mut stream = Box::pin(stream);
     while let Some(chunk) = stream.next().await {

@@ -1,17 +1,20 @@
-use std::{pin::Pin, io};
+use std::{io, pin::Pin};
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use tokio_stream::Stream;
-use async_trait::async_trait;
 
-mod s3list;
 mod filesystem_list;
+mod s3list;
 
+pub use filesystem_list::FilesystemList;
 pub use s3list::S3List;
-pub use filesystem_list::{FilesystemList};
-use tui::{widgets::{ListState, List, ListItem}, style::{Style, Modifier, Color}};
+use tui::{
+    style::{Color, Modifier, Style},
+    widgets::{List, ListItem, ListState},
+};
 
-use crate::providers::{Kind};
+use crate::providers::Kind;
 
 #[derive(Clone, PartialEq)]
 pub enum State {
@@ -52,7 +55,9 @@ impl<T> ListEntry<T> {
 }
 
 impl<T> From<Box<ListEntry<T>>> for ListEntry<Box<dyn FileEntry>>
-where T: FileEntry + 'static {
+where
+    T: FileEntry + 'static,
+{
     fn from(entry: Box<ListEntry<T>>) -> Self {
         ListEntry {
             value: Box::new(entry.value),
@@ -79,7 +84,7 @@ pub trait SelectableContainer<T> {
     fn get_items(&self) -> Vec<ListEntry<T>>;
 }
 
-pub type BoxedByteStream = Box<dyn Stream<Item=Result<Bytes, io::Error>> + Send + 'static>;
+pub type BoxedByteStream = Box<dyn Stream<Item = Result<Bytes, io::Error>> + Send + 'static>;
 
 #[async_trait]
 pub trait FileCRUD {
@@ -99,8 +104,10 @@ pub trait TuiDisplay {
     // fn transform_list(options: &[ListEntry<Box<dyn FileEntry>>]) -> Vec<ListItem> {
 }
 
-fn transform_list<T>(options: &[Box<ListEntry<T>>]) -> Vec<ListItem> 
-where T: FileEntry {
+fn transform_list<T>(options: &[Box<ListEntry<T>>]) -> Vec<ListItem>
+where
+    T: FileEntry,
+{
     options
         .iter()
         .map(|o| {
@@ -121,5 +128,11 @@ where T: FileEntry {
         .collect()
 }
 
-pub trait FileList: StatefulContainer + SelectableContainer<Box<dyn FileEntry>> + FileCRUD + TuiDisplay {}
-impl<T> FileList for T where T: StatefulContainer + SelectableContainer<Box<dyn FileEntry>> + FileCRUD + TuiDisplay {}
+pub trait FileList:
+    StatefulContainer + SelectableContainer<Box<dyn FileEntry>> + FileCRUD + TuiDisplay
+{
+}
+impl<T> FileList for T where
+    T: StatefulContainer + SelectableContainer<Box<dyn FileEntry>> + FileCRUD + TuiDisplay
+{
+}

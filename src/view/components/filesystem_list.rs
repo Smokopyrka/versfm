@@ -1,12 +1,24 @@
-use std::{path::{PathBuf, Path}, env, fs, pin::Pin};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    pin::Pin,
+};
 
 use async_trait::async_trait;
-use tui::{widgets::{ListState, Block, Borders, List}, style::{Color, Style, Modifier}};
+use tui::{
+    style::{Color, Modifier, Style},
+    widgets::{Block, Borders, List, ListState},
+};
 
-use crate::providers::{Kind, filesystem::{FilesystemObject, self}};
+use crate::providers::{
+    filesystem::{self, FilesystemObject},
+    Kind,
+};
 
-use super::{ListEntry, State, SelectableContainer, FileCRUD, StatefulContainer, FileEntry, BoxedByteStream, TuiDisplay};
-
+use super::{
+    BoxedByteStream, FileCRUD, FileEntry, ListEntry, SelectableContainer, State, StatefulContainer,
+    TuiDisplay,
+};
 
 impl FileEntry for FilesystemObject {
     fn get_name(&self) -> &str {
@@ -48,7 +60,6 @@ impl FilesystemList {
 }
 
 impl StatefulContainer for FilesystemList {
-
     fn get_current(&self) -> ListState {
         self.state.clone()
     }
@@ -89,13 +100,15 @@ impl StatefulContainer for FilesystemList {
 }
 
 impl SelectableContainer<Box<dyn FileEntry>> for FilesystemList {
-
     fn get(&self, i: usize) -> ListEntry<Box<dyn FileEntry>> {
         ListEntry::from(self.items[i].clone())
     }
 
     fn get_items(&self) -> Vec<ListEntry<Box<dyn FileEntry>>> {
-        self.items.iter().map(|i| ListEntry::from(i.clone())).collect()
+        self.items
+            .iter()
+            .map(|i| ListEntry::from(i.clone()))
+            .collect()
     }
 
     fn select(&mut self, selection: State) {
@@ -112,7 +125,8 @@ impl SelectableContainer<Box<dyn FileEntry>> for FilesystemList {
     }
 
     fn get_selected(&mut self, selection: State) -> Vec<Box<dyn FileEntry>> {
-        let files: Vec<Box<FilesystemObject>> = self.items
+        let files: Vec<Box<FilesystemObject>> = self
+            .items
             .iter()
             .filter(|i| *i.selected() == selection)
             .map(|i| Box::new(i.value.clone()))
@@ -125,12 +139,12 @@ impl SelectableContainer<Box<dyn FileEntry>> for FilesystemList {
     }
 }
 
-
 #[async_trait]
 impl FileCRUD for FilesystemList {
-
     async fn get_file_stream(&mut self, file_name: &str) -> Pin<BoxedByteStream> {
-        Box::pin(filesystem::get_file_byte_stream(Path::new(&self.add_prefix(file_name))))
+        Box::pin(filesystem::get_file_byte_stream(Path::new(
+            &self.add_prefix(file_name),
+        )))
     }
 
     async fn put_file(&mut self, file_name: &str, stream: Pin<BoxedByteStream>) {
@@ -140,16 +154,13 @@ impl FileCRUD for FilesystemList {
     async fn delete_file(&mut self, file_name: &str) {
         filesystem::remove_file(Path::new(&self.add_prefix(file_name)));
     }
-    
+
     async fn refresh(&mut self) {
         self.items = Self::get_list_entries(&self.curr_path);
     }
 
     fn get_filenames(&self) -> Vec<&str> {
-        self.items
-            .iter()
-            .map(|i| i.value().name.as_str())
-            .collect()
+        self.items.iter().map(|i| i.value().name.as_str()).collect()
     }
 
     fn move_out_of_selected_dir(&mut self) {
@@ -195,7 +206,11 @@ impl TuiDisplay for FilesystemList {
             style = style.fg(Color::LightBlue);
         }
         let block = Block::default()
-            .title(format!("{}@local:{}", self.get_resource_name(), self.get_current_path()))
+            .title(format!(
+                "{}@local:{}",
+                self.get_resource_name(),
+                self.get_current_path()
+            ))
             .style(style)
             .borders(Borders::ALL);
         let items = super::transform_list(&self.items);
@@ -205,5 +220,4 @@ impl TuiDisplay for FilesystemList {
             .highlight_style(Style::default().add_modifier(Modifier::BOLD))
             .highlight_symbol("> ")
     }
-
 }

@@ -1,12 +1,21 @@
-use std::{sync::Arc, pin::Pin};
+use std::{pin::Pin, sync::Arc};
 
-use crate::providers::{s3::{S3Provider, S3Object}, Kind};
-use super::{FileCRUD, SelectableContainer, StatefulContainer, State, ListEntry, FileEntry, BoxedByteStream, TuiDisplay};
+use super::{
+    BoxedByteStream, FileCRUD, FileEntry, ListEntry, SelectableContainer, State, StatefulContainer,
+    TuiDisplay,
+};
+use crate::providers::{
+    s3::{S3Object, S3Provider},
+    Kind,
+};
 
 use async_trait::async_trait;
-use rusoto_core::ByteStream;
-use tui::{widgets::{ListState, Block, Borders, List}, style::{Style, Color, Modifier}};
 use futures::stream::Stream;
+use rusoto_core::ByteStream;
+use tui::{
+    style::{Color, Modifier, Style},
+    widgets::{Block, Borders, List, ListState},
+};
 
 pub struct S3List {
     client: Arc<S3Provider>,
@@ -30,13 +39,10 @@ impl S3List {
             Some(prefix) => format!("{}{}", prefix, to),
             None => String::from(to),
         }
-        
     }
-
 }
 
 impl StatefulContainer for S3List {
-
     fn get_current(&self) -> ListState {
         self.state.clone()
     }
@@ -77,13 +83,15 @@ impl StatefulContainer for S3List {
 }
 
 impl SelectableContainer<Box<dyn FileEntry>> for S3List {
-
     fn get(&self, i: usize) -> ListEntry<Box<dyn FileEntry>> {
         ListEntry::from(self.items[i].clone())
     }
 
     fn get_items(&self) -> Vec<ListEntry<Box<dyn FileEntry>>> {
-        self.items.iter().map(|i| ListEntry::from(i.clone())).collect()
+        self.items
+            .iter()
+            .map(|i| ListEntry::from(i.clone()))
+            .collect()
     }
 
     fn select(&mut self, selection: State) {
@@ -100,7 +108,8 @@ impl SelectableContainer<Box<dyn FileEntry>> for S3List {
     }
 
     fn get_selected(&mut self, selection: State) -> Vec<Box<dyn FileEntry>> {
-        let files: Vec<S3Object> = self.items
+        let files: Vec<S3Object> = self
+            .items
             .iter()
             .filter(|i| *i.selected() == selection)
             .map(|i| i.clone().value)
@@ -115,25 +124,32 @@ impl SelectableContainer<Box<dyn FileEntry>> for S3List {
 
 #[async_trait]
 impl FileCRUD for S3List {
-
     async fn get_file_stream(&mut self, file_name: &str) -> Pin<BoxedByteStream> {
-        Box::pin(self.client.download_object(&self.add_prefix(file_name)).await)
+        Box::pin(
+            self.client
+                .download_object(&self.add_prefix(file_name))
+                .await,
+        )
     }
 
     async fn put_file(&mut self, file_name: &str, stream: Pin<BoxedByteStream>) {
         let size = stream.size_hint();
         if let None = size.1 {
-            panic!("Stream must implement size hint in order to be
-            be sent to S3");
+            panic!(
+                "Stream must implement size hint in order to be
+            be sent to S3"
+            );
         }
         let content = ByteStream::new_with_size(stream, size.0);
-        self.client.put_object(&self.add_prefix(file_name), content).await;
+        self.client
+            .put_object(&self.add_prefix(file_name), content)
+            .await;
     }
 
     async fn delete_file(&mut self, file_name: &str) {
         self.client.delete_object(&self.add_prefix(file_name)).await;
     }
-    
+
     async fn refresh(&mut self) {
         let files: Vec<S3Object> = self.client.list_objects(self.s3_prefix.clone()).await;
         self.items = files
@@ -143,10 +159,7 @@ impl FileCRUD for S3List {
     }
 
     fn get_filenames(&self) -> Vec<&str> {
-        self.items
-            .iter()
-            .map(|i| i.value().name.as_str())
-            .collect()
+        self.items.iter().map(|i| i.value().name.as_str()).collect()
     }
 
     fn move_into_selected_dir(&mut self) {
@@ -183,7 +196,6 @@ impl FileCRUD for S3List {
     fn get_resource_name(&self) -> String {
         self.client.bucket_name.clone()
     }
-    
 }
 
 impl TuiDisplay for S3List {
@@ -193,7 +205,11 @@ impl TuiDisplay for S3List {
             style = style.fg(Color::LightBlue);
         }
         let block = Block::default()
-            .title(format!("{}@S3:/{}", self.get_resource_name(), self.get_current_path()))
+            .title(format!(
+                "{}@S3:/{}",
+                self.get_resource_name(),
+                self.get_current_path()
+            ))
             .style(style)
             .borders(Borders::ALL);
         let items = super::transform_list(&self.items);
@@ -203,5 +219,4 @@ impl TuiDisplay for S3List {
             .highlight_style(Style::default().add_modifier(Modifier::BOLD))
             .highlight_symbol("> ")
     }
-
 }

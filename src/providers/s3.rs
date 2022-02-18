@@ -7,7 +7,7 @@ use rusoto_s3::{
 
 use crate::view::components::FileEntry;
 
-use super::{Kind};
+use super::Kind;
 
 #[derive(Clone)]
 pub struct S3Object {

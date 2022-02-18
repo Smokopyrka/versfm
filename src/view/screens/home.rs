@@ -3,20 +3,15 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, LeaveAlternateScreen},
 };
-use std::{
-    error::Error,
-    io::Stdout,
-    sync::Arc,
-};
+use std::{error::Error, io::Stdout, sync::Arc};
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     Terminal,
 };
 
-use crate::view::components::{S3List, FileCRUD, State, FilesystemList, FileEntry, FileList};
-use crate::{providers::s3::S3Provider};
-
+use crate::providers::s3::S3Provider;
+use crate::view::components::{FileCRUD, FileList, FilesystemList, S3List, State};
 
 enum CurrentList {
     LeftList,
@@ -78,17 +73,14 @@ impl MainScreen {
     }
 
     async fn copy_items(&mut self) {
-        Self::copy_from_to(&mut self.fs_list,&mut self.s3_list).await;
-        Self::copy_from_to(&mut self.s3_list,&mut self.fs_list).await;
+        Self::copy_from_to(&mut self.fs_list, &mut self.s3_list).await;
+        Self::copy_from_to(&mut self.s3_list, &mut self.fs_list).await;
     }
-    
+
     async fn copy_from_to(from: &mut Box<dyn FileList>, to: &mut Box<dyn FileList>) {
         for selected in from.get_selected(State::ToCopy) {
             let name = selected.get_name();
-            to.put_file(
-                name, 
-                from.get_file_stream(name).await
-            ).await;
+            to.put_file(name, from.get_file_stream(name).await).await;
         }
     }
 
@@ -100,23 +92,20 @@ impl MainScreen {
     async fn delete_from(from: &mut Box<dyn FileList>) {
         for selected in from.get_selected(State::ToDelete) {
             let name = selected.get_name();
-            from.delete_file( name).await;
+            from.delete_file(name).await;
         }
     }
 
     async fn move_items(&mut self) {
-        Self::move_from_to(&mut self.fs_list,&mut self.s3_list).await;
-        Self::move_from_to(&mut self.s3_list,&mut self.fs_list).await;
+        Self::move_from_to(&mut self.fs_list, &mut self.s3_list).await;
+        Self::move_from_to(&mut self.s3_list, &mut self.fs_list).await;
     }
 
     async fn move_from_to(from: &mut Box<dyn FileList>, to: &mut Box<dyn FileList>) {
         for selected in from.get_selected(State::ToMove) {
             let name = selected.get_name();
-            to.put_file(
-                name, 
-                from.get_file_stream(name).await
-            ).await;
-            from.delete_file( name).await;
+            to.put_file(name, from.get_file_stream(name).await).await;
+            from.delete_file(name).await;
         }
     }
 
@@ -148,14 +137,18 @@ impl MainScreen {
                 .split(f.size());
 
             f.render_stateful_widget(
-                self.s3_list.make_file_list(matches!(self.curr_list, CurrentList::LeftList)),
+                self.s3_list
+                    .make_file_list(matches!(self.curr_list, CurrentList::LeftList)),
                 chunks[0],
-                &mut self.s3_list.get_current());
+                &mut self.s3_list.get_current(),
+            );
 
             f.render_stateful_widget(
-                self.fs_list.make_file_list(matches!(self.curr_list, CurrentList::LeftList)),
+                self.fs_list
+                    .make_file_list(matches!(self.curr_list, CurrentList::LeftList)),
                 chunks[1],
-                &mut self.fs_list.get_current());
+                &mut self.fs_list.get_current(),
+            );
         })?;
         Ok(())
     }

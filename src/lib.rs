@@ -1,15 +1,18 @@
 pub mod providers;
 mod view;
 
-use providers::s3::S3Provider;
 use crossterm::{
     event::{self, Event as CEvent, KeyCode, KeyEvent},
     terminal::enable_raw_mode,
 };
+use providers::s3::S3Provider;
 use std::{
     error::Error,
     io::{self, Stdout},
-    sync::{mpsc::{self, Receiver}, Arc},
+    sync::{
+        mpsc::{self, Receiver},
+        Arc,
+    },
     thread,
     time::{Duration, Instant},
 };
