@@ -111,16 +111,25 @@ where
     options
         .iter()
         .map(|o| {
-            let text = o.value().get_name();
+            let mut text = String::from(o.value().get_name());
             let mut style = Style::default();
 
             if let Kind::Directory = o.value().get_kind() {
                 style = style.add_modifier(Modifier::ITALIC);
             }
             match o.selected() {
-                State::ToMove => style = style.bg(Color::LightBlue),
-                State::ToDelete => style = style.bg(Color::Red),
-                State::ToCopy => style = style.bg(Color::LightGreen),
+                State::ToMove => {
+                    style = style.bg(Color::LightBlue);
+                    text.push_str(" [M]");
+                },
+                State::ToDelete => {
+                    style = style.bg(Color::Red);
+                    text.push_str(" [D]");
+                },
+                State::ToCopy => {
+                    style = style.bg(Color::LightGreen) ;
+                    text.push_str(" [C]");
+                },
                 _ => (),
             }
             ListItem::new(text).style(style)

@@ -39,7 +39,7 @@ pub struct App {
 impl App {
     fn spawn_sender() -> Receiver<Event<KeyEvent>> {
         let (tx, rx) = mpsc::channel();
-        let tick_rate = Duration::from_millis(200);
+        let tick_rate = Duration::from_millis(50);
 
         thread::spawn(move || {
             let mut last_tick = Instant::now();
@@ -90,22 +90,16 @@ impl App {
     }
 
     pub async fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        self.main_screen.render()?;
         loop {
             match self.input_channel.recv().unwrap() {
-                Event::Input(event) => self.handle_key(event).await,
+                Event::Input(event) => self.main_screen.handle_event(event).await,
                 Event::Shutdown => {
                     self.main_screen.shutdown()?;
                     break;
                 }
-                Event::Tick => (),
+                Event::Tick => self.main_screen.render().unwrap(),
             }
         }
         Ok(())
-    }
-
-    async fn handle_key(&mut self, key_event: KeyEvent) {
-        self.main_screen.handle_event(key_event).await;
-        self.main_screen.render().unwrap()
     }
 }
