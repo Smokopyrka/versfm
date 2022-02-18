@@ -145,7 +145,7 @@ impl MainScreen {
 
             f.render_stateful_widget(
                 self.fs_list
-                    .make_file_list(matches!(self.curr_list, CurrentList::LeftList)),
+                    .make_file_list(matches!(self.curr_list, CurrentList::RightList)),
                 chunks[1],
                 &mut self.fs_list.get_current(),
             );
