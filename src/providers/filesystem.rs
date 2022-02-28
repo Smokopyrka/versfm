@@ -62,43 +62,29 @@ impl Stream for FileBytesStream {
 }
 
 pub fn get_files_list(path: &Path) -> Result<Vec<FilesystemObject>, io::Error> {
-    if !path.exists()  {
-        return Err(io::Error::new(io::ErrorKind::NotFound, 
-            "File with given path was not found"));
-    }
-    if let Ok(dir_metadata) = fs::metadata(path) {
-        if !dir_metadata.is_dir() {
-            if let Ok(dir_entries) = fs::read_dir(path) {
-                return Ok(dir_entries.map(|f| {
-                    let path = f.unwrap().path();
-                    let mut file_name = String::from(path.file_name()
-                        .unwrap()
-                        .to_str()
-                        .expect("Cannot convert non-utf8 filename to string"));
-                    let kind: Kind;
-                    if fs::metadata(&path).unwrap().is_dir() {
-                        file_name.push_str("/");
-                        kind = Kind::Directory
-                    } else {
-                        kind = Kind::File;
-                    }
-                    FilesystemObject {
-                        name: file_name,
-                        dir: path.parent().and_then(|p| Some(p.to_path_buf())),
-                        kind: kind,
-                    }
-                }).collect());
+    if fs::metadata(path)?.is_dir() {
+        return Ok(fs::read_dir(path)?.map(|f| {
+            let path = f.unwrap().path();
+            let mut file_name = String::from(path.file_name()
+                .unwrap()
+                .to_str()
+                .expect("Cannot convert non-utf8 filename to string"));
+            let kind: Kind;
+            if fs::metadata(&path).unwrap().is_dir() {
+                file_name.push_str("/");
+                kind = Kind::Directory
             } else {
-                return Err(io::Error::new(io::ErrorKind::Other, 
-                    "Couldn't read from the file, possible permissions issue"));
+                kind = Kind::File;
             }
-        } else {
-            return Err(io::Error::new(io::ErrorKind::Unsupported, 
-                "Given path points to a non-directory file"));
-        }
+            FilesystemObject {
+                name: file_name,
+                dir: path.parent().and_then(|p| Some(p.to_path_buf())),
+                kind: kind,
+            }
+        }).collect());
     } else {
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, 
-                "Couldn't access directory metadata, possible permissions issue"));
+        return Err(io::Error::new(io::ErrorKind::Unsupported, 
+            "Given path points to a non-directory file"));
     }
 }
 
@@ -114,42 +100,23 @@ pub async fn write_file_from_stream<S>(path: &Path, stream: S) -> Result<(), io:
 where
     S: Stream<Item = Result<Bytes, io::Error>> + Send + 'static,
 {
-    if let Ok(new_file) = File::create(path) {
-        let mut writer = BufWriter::new(new_file);
-        let mut stream = Box::pin(stream);
-        while let Some(chunk) = stream.next().await {
-            if let Err(err) = writer.write(chunk.unwrap().borrow()) {
-                match err.kind() {
-                    io::ErrorKind::Interrupted => continue,
-                    _ => return Err(err)
-                }
-            };
-        }
-    } else {
-        return Err(io::Error::new(io::ErrorKind::NotFound, 
-            "Couldn't create file for writing, possible permissions issue"));
+    let mut writer = BufWriter::new(File::create(path)?);
+    let mut stream = Box::pin(stream);
+    while let Some(chunk) = stream.next().await {
+        if let Err(err) = writer.write(chunk.unwrap().borrow()) {
+            match err.kind() {
+                io::ErrorKind::Interrupted => continue,
+                _ => return Err(err)
+            }
+        };
     }
     Ok(())
 }
 
 pub fn remove_file(path: &Path) -> Result<(), io::Error> {
-    if !path.exists()  {
-        return Err(io::Error::new(io::ErrorKind::NotFound, 
-            "File with given path was not found"));
+    if fs::metadata(path)?.is_dir() {
+        return Err(io::Error::new(io::ErrorKind::Unsupported,
+            "Deleteion of directories is unsupported!"));
     }
-    if let Ok(file_metadata) = fs::metadata(path) {
-        if file_metadata.is_dir() {
-            return Err(io::Error::new(io::ErrorKind::Unsupported,
-                "Deleteion of directories is unsupported!"));
-        }
-        if let Err(_) = fs::remove_file(path) {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "Coudn't delete file, possible permissions issue"));
-        }
-    } else {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied,
-            "Couldn't access file metadata, possible permissions issue"));
-    }
-    Ok(())
+    fs::remove_file(path)
 }
