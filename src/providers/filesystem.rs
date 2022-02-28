@@ -1,7 +1,7 @@
 use std::{
     self,
     borrow::Borrow,
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
     task::Poll,
@@ -83,9 +83,12 @@ pub fn get_files_list(path: &Path) -> Vec<FilesystemObject> {
         .collect()
 }
 
-pub fn get_file_byte_stream(path: &Path) -> FileBytesStream {
-    let file = File::open(path).unwrap();
-    FileBytesStream::new(file)
+pub fn get_file_byte_stream(path: &Path) -> Result<FileBytesStream, io::Error> {
+    let file = fs::OpenOptions::new()
+        .create(false)
+        .truncate(false)
+        .open(path)?;
+    Ok(FileBytesStream::new(file))
 }
 
 pub async fn write_file_from_stream<S>(path: &Path, stream: S)
