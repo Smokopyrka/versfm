@@ -99,6 +99,24 @@ where
     }
 }
 
-pub fn remove_file(path: &Path) {
-    fs::remove_file(path).unwrap();
+pub fn remove_file(path: &Path) -> Result<(), io::Error> {
+    if !path.exists()  {
+        return Err(io::Error::new(io::ErrorKind::NotFound, 
+            "File with given path was not found"));
+    }
+    if let Ok(file_metadata) = fs::metadata(path) {
+        if file_metadata.is_dir() {
+            return Err(io::Error::new(io::ErrorKind::Unsupported,
+                "Deleteion of directories is unsupported!"));
+        }
+        if let Err(_) = fs::remove_file(path) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Coudn't delete file, possible permissions issue"));
+        }
+    } else {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied,
+            "Couldn't access file metadata, possible permissions issue"));
+    }
+    Ok(())
 }
