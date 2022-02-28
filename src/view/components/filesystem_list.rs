@@ -53,6 +53,7 @@ impl FilesystemList {
 
     fn get_list_entries(path: &Path) -> Vec<Box<ListEntry<FilesystemObject>>> {
         filesystem::get_files_list(path)
+            .unwrap()
             .into_iter()
             .map(|i| Box::new(ListEntry::new(i)))
             .collect()
