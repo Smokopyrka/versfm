@@ -110,15 +110,26 @@ pub fn get_file_byte_stream(path: &Path) -> Result<FileBytesStream, io::Error> {
     Ok(FileBytesStream::new(file))
 }
 
-pub async fn write_file_from_stream<S>(path: &Path, stream: S)
+pub async fn write_file_from_stream<S>(path: &Path, stream: S) -> Result<(), io::Error>
 where
     S: Stream<Item = Result<Bytes, io::Error>> + Send + 'static,
 {
-    let mut writer = BufWriter::new(File::create(path).unwrap());
-    let mut stream = Box::pin(stream);
-    while let Some(chunk) = stream.next().await {
-        writer.write(chunk.unwrap().borrow()).unwrap();
+    if let Ok(new_file) = File::create(path) {
+        let mut writer = BufWriter::new(new_file);
+        let mut stream = Box::pin(stream);
+        while let Some(chunk) = stream.next().await {
+            if let Err(err) = writer.write(chunk.unwrap().borrow()) {
+                match err.kind() {
+                    io::ErrorKind::Interrupted => continue,
+                    _ => return Err(err)
+                }
+            };
+        }
+    } else {
+        return Err(io::Error::new(io::ErrorKind::NotFound, 
+            "Couldn't create file for writing, possible permissions issue"));
     }
+    Ok(())
 }
 
 pub fn remove_file(path: &Path) -> Result<(), io::Error> {

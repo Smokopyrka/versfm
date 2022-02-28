@@ -149,7 +149,7 @@ impl FileCRUD for FilesystemList {
     }
 
     async fn put_file(&mut self, file_name: &str, stream: Pin<BoxedByteStream>) {
-        filesystem::write_file_from_stream(Path::new(&self.add_prefix(file_name)), stream).await
+        filesystem::write_file_from_stream(Path::new(&self.add_prefix(file_name)), stream).await.unwrap()
     }
 
     async fn delete_file(&mut self, file_name: &str) {
