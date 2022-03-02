@@ -63,28 +63,34 @@ impl Stream for FileBytesStream {
 
 pub fn get_files_list(path: &Path) -> Result<Vec<FilesystemObject>, io::Error> {
     if fs::metadata(path)?.is_dir() {
-        return Ok(fs::read_dir(path)?.map(|f| {
-            let path = f.unwrap().path();
-            let mut file_name = String::from(path.file_name()
-                .unwrap()
-                .to_str()
-                .expect("Cannot convert non-utf8 filename to string"));
-            let kind: Kind;
-            if fs::metadata(&path).unwrap().is_dir() {
-                file_name.push_str("/");
-                kind = Kind::Directory
-            } else {
-                kind = Kind::File;
-            }
-            FilesystemObject {
-                name: file_name,
-                dir: path.parent().and_then(|p| Some(p.to_path_buf())),
-                kind: kind,
-            }
-        }).collect());
+        return Ok(fs::read_dir(path)?
+            .map(|f| {
+                let path = f.unwrap().path();
+                let mut file_name = String::from(
+                    path.file_name()
+                        .unwrap()
+                        .to_str()
+                        .expect("Cannot convert non-utf8 filename to string"),
+                );
+                let kind: Kind;
+                if fs::metadata(&path).unwrap().is_dir() {
+                    file_name.push_str("/");
+                    kind = Kind::Directory
+                } else {
+                    kind = Kind::File;
+                }
+                FilesystemObject {
+                    name: file_name,
+                    dir: path.parent().and_then(|p| Some(p.to_path_buf())),
+                    kind: kind,
+                }
+            })
+            .collect());
     } else {
-        return Err(io::Error::new(io::ErrorKind::Unsupported, 
-            "Given path points to a non-directory file"));
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Given path points to a non-directory file",
+        ));
     }
 }
 
@@ -107,7 +113,7 @@ where
         if let Err(err) = writer.write(chunk.unwrap().borrow()) {
             match err.kind() {
                 io::ErrorKind::Interrupted => continue,
-                _ => return Err(err)
+                _ => return Err(err),
             }
         };
     }
@@ -116,8 +122,10 @@ where
 
 pub fn remove_file(path: &Path) -> Result<(), io::Error> {
     if fs::metadata(path)?.is_dir() {
-        return Err(io::Error::new(io::ErrorKind::Unsupported,
-            "Deleteion of directories is unsupported!"));
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Deleteion of directories is unsupported!",
+        ));
     }
     fs::remove_file(path)
 }

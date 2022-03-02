@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use tokio_stream::Stream;
 
+mod err;
 mod filesystem_list;
 mod s3list;
 
@@ -121,15 +122,15 @@ where
                 State::ToMove => {
                     style = style.bg(Color::LightBlue);
                     text.push_str(" [M]");
-                },
+                }
                 State::ToDelete => {
                     style = style.bg(Color::Red);
                     text.push_str(" [D]");
-                },
+                }
                 State::ToCopy => {
-                    style = style.bg(Color::LightGreen) ;
+                    style = style.bg(Color::LightGreen);
                     text.push_str(" [C]");
-                },
+                }
                 _ => (),
             }
             ListItem::new(text).style(style)

@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use rusoto_core::{credential::ProfileProvider, ByteStream, HttpClient, Region, RusotoError};
 use rusoto_s3::{
-    DeleteObjectRequest, GetObjectOutput, GetObjectRequest, ListObjectsV2Request, PutObjectRequest,
-    S3Client, S3, GetObjectError, DeleteObjectError, PutObjectError, ListObjectsV2Error,
+    DeleteObjectError, DeleteObjectRequest, GetObjectError, GetObjectOutput, GetObjectRequest,
+    ListObjectsV2Error, ListObjectsV2Request, PutObjectError, PutObjectRequest, S3Client, S3,
 };
 
 use crate::view::components::FileEntry;
@@ -47,7 +47,10 @@ impl S3Provider {
         }
     }
 
-    pub async fn list_objects(&self, prefix: Option<String>) -> Result<Vec<S3Object>, RusotoError<ListObjectsV2Error>> {
+    pub async fn list_objects(
+        &self,
+        prefix: Option<String>,
+    ) -> Result<Vec<S3Object>, RusotoError<ListObjectsV2Error>> {
         let mut request = ListObjectsV2Request::default();
         request.bucket = self.bucket_name.clone();
         request.prefix = prefix.clone();
@@ -100,22 +103,31 @@ impl S3Provider {
                 }
             })
             .collect();
-            Ok(result)
+        Ok(result)
     }
 
-    pub async fn download_object(&self, object_name: &str) -> Result<ByteStream, RusotoError<GetObjectError>> {
+    pub async fn download_object(
+        &self,
+        object_name: &str,
+    ) -> Result<ByteStream, RusotoError<GetObjectError>> {
         let object: GetObjectOutput = self.get_object(object_name).await?;
         Ok(object.body.unwrap())
     }
 
-    async fn get_object(&self, object_name: &str) -> Result<GetObjectOutput, RusotoError<GetObjectError>> {
+    async fn get_object(
+        &self,
+        object_name: &str,
+    ) -> Result<GetObjectOutput, RusotoError<GetObjectError>> {
         let mut request = GetObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);
         Ok(self.s3_client.get_object(request).await?)
     }
 
-    pub async fn delete_object(&self, object_name: &str) -> Result<(), RusotoError<DeleteObjectError>> {
+    pub async fn delete_object(
+        &self,
+        object_name: &str,
+    ) -> Result<(), RusotoError<DeleteObjectError>> {
         let mut request = DeleteObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);
@@ -123,7 +135,11 @@ impl S3Provider {
         Ok(())
     }
 
-    pub async fn put_object(&self, object_name: &str, content: ByteStream) -> Result<(), RusotoError<PutObjectError>> {
+    pub async fn put_object(
+        &self,
+        object_name: &str,
+        content: ByteStream,
+    ) -> Result<(), RusotoError<PutObjectError>> {
         let mut request = PutObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);

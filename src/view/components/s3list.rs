@@ -127,7 +127,8 @@ impl FileCRUD for S3List {
     async fn get_file_stream(&mut self, file_name: &str) -> Pin<BoxedByteStream> {
         Box::pin(
             self.client
-                .download_object(&self.add_prefix(file_name)).await
+                .download_object(&self.add_prefix(file_name))
+                .await
                 .unwrap(),
         )
     }
@@ -135,21 +136,28 @@ impl FileCRUD for S3List {
     async fn put_file(&mut self, file_name: &str, stream: Pin<BoxedByteStream>) {
         let size = stream.size_hint();
         if let None = size.1 {
-            panic!(
-                "Stream must implement size hint in order to be be sent to S3"
-            );
+            panic!("Stream must implement size hint in order to be be sent to S3");
         }
         let content = ByteStream::new_with_size(stream, size.0);
         self.client
-            .put_object(&self.add_prefix(file_name), content).await.unwrap();
+            .put_object(&self.add_prefix(file_name), content)
+            .await
+            .unwrap();
     }
 
     async fn delete_file(&mut self, file_name: &str) {
-        self.client.delete_object(&self.add_prefix(file_name)).await.unwrap();
+        self.client
+            .delete_object(&self.add_prefix(file_name))
+            .await
+            .unwrap();
     }
 
     async fn refresh(&mut self) {
-        let files: Vec<S3Object> = self.client.list_objects(self.s3_prefix.clone()).await.unwrap();
+        let files: Vec<S3Object> = self
+            .client
+            .list_objects(self.s3_prefix.clone())
+            .await
+            .unwrap();
         self.items = files
             .into_iter()
             .map(|i| Box::new(ListEntry::new(i)))

@@ -143,13 +143,13 @@ impl SelectableContainer<Box<dyn FileEntry>> for FilesystemList {
 #[async_trait]
 impl FileCRUD for FilesystemList {
     async fn get_file_stream(&mut self, file_name: &str) -> Pin<BoxedByteStream> {
-        Box::pin(filesystem::get_file_byte_stream(Path::new(
-            &self.add_prefix(file_name),
-        )).unwrap())
+        Box::pin(filesystem::get_file_byte_stream(Path::new(&self.add_prefix(file_name))).unwrap())
     }
 
     async fn put_file(&mut self, file_name: &str, stream: Pin<BoxedByteStream>) {
-        filesystem::write_file_from_stream(Path::new(&self.add_prefix(file_name)), stream).await.unwrap()
+        filesystem::write_file_from_stream(Path::new(&self.add_prefix(file_name)), stream)
+            .await
+            .unwrap()
     }
 
     async fn delete_file(&mut self, file_name: &str) {
