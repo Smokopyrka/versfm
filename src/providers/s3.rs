@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
-use rusoto_core::{credential::ProfileProvider, ByteStream, HttpClient, Region};
+use rusoto_core::{credential::ProfileProvider, ByteStream, HttpClient, Region, RusotoError};
 use rusoto_s3::{
     DeleteObjectRequest, GetObjectOutput, GetObjectRequest, ListObjectsV2Request, PutObjectRequest,
-    S3Client, S3,
+    S3Client, S3, GetObjectError, DeleteObjectError, PutObjectError, ListObjectsV2Error,
 };
 
 use crate::view::components::FileEntry;
@@ -14,9 +14,9 @@ pub struct S3Object {
     pub name: String,
     pub prefix: String,
     pub kind: Kind,
-    pub size: i64,
+    pub size: Option<i64>,
     pub last_mod: DateTime<Utc>,
-    pub storage_class: String,
+    pub storage_class: Option<String>,
     pub owner: Option<String>,
 }
 
@@ -47,17 +47,17 @@ impl S3Provider {
         }
     }
 
-    pub async fn list_objects(&self, prefix: Option<String>) -> Vec<S3Object> {
+    pub async fn list_objects(&self, prefix: Option<String>) -> Result<Vec<S3Object>, RusotoError<ListObjectsV2Error>> {
         let mut request = ListObjectsV2Request::default();
         request.bucket = self.bucket_name.clone();
         request.prefix = prefix.clone();
         let objects = self.s3_client.list_objects_v2(request);
-        let response = match objects.await.unwrap().contents {
-            None => return Vec::new(),
+        let response = match objects.await?.contents {
+            None => return Ok(Vec::new()),
             Some(contents) => contents,
         };
         let prefix = prefix.unwrap_or(String::new());
-        response
+        let result = response
             .into_iter()
             .filter(|i| {
                 let key = i.key.clone().unwrap();
@@ -88,52 +88,49 @@ impl S3Provider {
                     name: String::from(file_name),
                     prefix: String::from(prefix),
                     kind,
-                    size: i.size.unwrap(),
+                    size: i.size,
                     last_mod: DateTime::parse_from_rfc3339(i.last_modified.unwrap().as_str())
-                        .unwrap()
+                        .expect("Couldn't parse object's last modification date from string")
                         .with_timezone(&Utc),
-                    storage_class: i.storage_class.unwrap(),
+                    storage_class: i.storage_class,
                     owner: match i.owner {
                         Some(own) => own.display_name,
                         None => None,
                     },
                 }
             })
-            .collect()
+            .collect();
+            Ok(result)
     }
 
-    pub async fn download_object(&self, object_name: &str) -> ByteStream {
-        let object: GetObjectOutput = self.get_object(object_name).await;
-        object.body.unwrap()
+    pub async fn download_object(&self, object_name: &str) -> Result<ByteStream, RusotoError<GetObjectError>> {
+        let object: GetObjectOutput = self.get_object(object_name).await?;
+        Ok(object.body.unwrap())
     }
 
-    async fn get_object(&self, object_name: &str) -> GetObjectOutput {
+    async fn get_object(&self, object_name: &str) -> Result<GetObjectOutput, RusotoError<GetObjectError>> {
         let mut request = GetObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);
-        let response = self.s3_client.get_object(request).await.unwrap();
-        response
+        Ok(self.s3_client.get_object(request).await?)
     }
 
-    pub async fn delete_object(&self, object_name: &str) {
+    pub async fn delete_object(&self, object_name: &str) -> Result<(), RusotoError<DeleteObjectError>> {
         let mut request = DeleteObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);
-        self.s3_client.delete_object(request).await.unwrap();
+        self.s3_client.delete_object(request).await?;
+        Ok(())
     }
 
-    pub async fn put_object(&self, object_name: &str, content: ByteStream) {
-        // let mut file = File::open(file_path).unwrap();
-        // let mut contents: Vec<u8> = Vec::new();
-        // file.read_to_end(&mut contents).unwrap();
-
+    pub async fn put_object(&self, object_name: &str, content: ByteStream) -> Result<(), RusotoError<PutObjectError>> {
         let mut request = PutObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);
-        // request.body = Some(ByteStream::from(contents));
         request.body = Some(content);
 
-        self.s3_client.put_object(request).await.unwrap();
+        self.s3_client.put_object(request).await?;
+        Ok(())
     }
 }
 
@@ -158,7 +155,7 @@ mod tests {
     #[tokio::test]
     async fn remove_item_from_bucket() {
         let cli = S3Provider::new(BUCKET_NAME).await;
-        cli.delete_object("delete-object-test.txt").await;
+        cli.delete_object("delete-object-test.txt").await.unwrap();
     }
 
     // #[tokio::test]
