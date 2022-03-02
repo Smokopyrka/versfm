@@ -16,8 +16,8 @@ use crate::providers::{
 };
 
 use super::{
-    BoxedByteStream, FileCRUD, FileEntry, ListEntry, SelectableContainer, State, StatefulContainer,
-    TuiDisplay,
+    err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, ListEntry, SelectableContainer,
+    State, StatefulContainer, TuiDisplay,
 };
 
 impl FileEntry for FilesystemObject {
@@ -142,26 +142,38 @@ impl SelectableContainer<Box<dyn FileEntry>> for FilesystemList {
 
 #[async_trait]
 impl FileCRUD for FilesystemList {
-    async fn get_file_stream(&mut self, file_name: &str) -> Pin<BoxedByteStream> {
-        Box::pin(filesystem::get_file_byte_stream(Path::new(&self.add_prefix(file_name))).unwrap())
+    async fn get_file_stream(
+        &mut self,
+        file_name: &str,
+    ) -> Result<Pin<BoxedByteStream>, ComponentError> {
+        Ok(Box::pin(
+            filesystem::get_file_byte_stream(Path::new(&self.add_prefix(file_name))).unwrap(),
+        ))
     }
 
-    async fn put_file(&mut self, file_name: &str, stream: Pin<BoxedByteStream>) {
+    async fn put_file(
+        &mut self,
+        file_name: &str,
+        stream: Pin<BoxedByteStream>,
+    ) -> Result<(), ComponentError> {
         filesystem::write_file_from_stream(Path::new(&self.add_prefix(file_name)), stream)
             .await
-            .unwrap()
+            .unwrap();
+        Ok(())
     }
 
-    async fn delete_file(&mut self, file_name: &str) {
+    async fn delete_file(&mut self, file_name: &str) -> Result<(), ComponentError> {
         filesystem::remove_file(Path::new(&self.add_prefix(file_name))).unwrap();
+        Ok(())
     }
 
-    async fn refresh(&mut self) {
+    async fn refresh(&mut self) -> Result<(), ComponentError> {
         self.items = Self::get_list_entries(&self.curr_path);
+        Ok(())
     }
 
-    fn get_filenames(&self) -> Vec<&str> {
-        self.items.iter().map(|i| i.value().name.as_str()).collect()
+    fn get_filenames(&self) -> Result<Vec<&str>, ComponentError> {
+        Ok(self.items.iter().map(|i| i.value().name.as_str()).collect())
     }
 
     fn move_out_of_selected_dir(&mut self) {

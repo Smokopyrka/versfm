@@ -31,7 +31,7 @@ impl MainScreen {
         client: Arc<S3Provider>,
     ) -> MainScreen {
         let mut s3_list = Box::new(S3List::new(client));
-        s3_list.refresh().await;
+        s3_list.refresh().await.unwrap();
         let fs_list = Box::new(FilesystemList::new());
         MainScreen {
             term: term,
@@ -49,16 +49,16 @@ impl MainScreen {
                 self.move_items().await;
                 self.copy_items().await;
                 self.delete_items().await;
-                self.s3_list.refresh().await;
-                self.fs_list.refresh().await;
+                self.s3_list.refresh().await.unwrap();
+                self.fs_list.refresh().await.unwrap();
             }
             KeyCode::Char(' ') => {
                 curr_list.move_into_selected_dir();
-                curr_list.refresh().await;
+                curr_list.refresh().await.unwrap();
             }
             KeyCode::Backspace => {
                 curr_list.move_out_of_selected_dir();
-                curr_list.refresh().await;
+                curr_list.refresh().await.unwrap();
             }
             KeyCode::Down | KeyCode::Char('j') => curr_list.next(),
             KeyCode::Up | KeyCode::Char('k') => curr_list.previous(),
@@ -67,7 +67,7 @@ impl MainScreen {
             KeyCode::Char('m') => curr_list.select(State::ToMove),
             KeyCode::Char('c') => curr_list.select(State::ToCopy),
             KeyCode::Char('d') => curr_list.select(State::ToDelete),
-            KeyCode::Char('r') => curr_list.refresh().await,
+            KeyCode::Char('r') => curr_list.refresh().await.unwrap(),
             _ => (),
         }
     }
@@ -80,7 +80,9 @@ impl MainScreen {
     async fn copy_from_to(from: &mut Box<dyn FileList>, to: &mut Box<dyn FileList>) {
         for selected in from.get_selected(State::ToCopy) {
             let name = selected.get_name();
-            to.put_file(name, from.get_file_stream(name).await).await;
+            to.put_file(name, from.get_file_stream(name).await.unwrap())
+                .await
+                .unwrap();
         }
     }
 
@@ -92,7 +94,7 @@ impl MainScreen {
     async fn delete_from(from: &mut Box<dyn FileList>) {
         for selected in from.get_selected(State::ToDelete) {
             let name = selected.get_name();
-            from.delete_file(name).await;
+            from.delete_file(name).await.unwrap();
         }
     }
 
@@ -104,8 +106,10 @@ impl MainScreen {
     async fn move_from_to(from: &mut Box<dyn FileList>, to: &mut Box<dyn FileList>) {
         for selected in from.get_selected(State::ToMove) {
             let name = selected.get_name();
-            to.put_file(name, from.get_file_stream(name).await).await;
-            from.delete_file(name).await;
+            to.put_file(name, from.get_file_stream(name).await.unwrap())
+                .await
+                .unwrap();
+            from.delete_file(name).await.unwrap();
         }
     }
 

@@ -17,6 +17,8 @@ use tui::{
 
 use crate::providers::Kind;
 
+use self::err::ComponentError;
+
 #[derive(Clone, PartialEq)]
 pub enum State {
     Unselected,
@@ -89,11 +91,18 @@ pub type BoxedByteStream = Box<dyn Stream<Item = Result<Bytes, io::Error>> + Sen
 
 #[async_trait]
 pub trait FileCRUD {
-    async fn refresh(&mut self);
-    async fn get_file_stream(&mut self, file_name: &str) -> Pin<BoxedByteStream>;
-    async fn put_file(&mut self, file_name: &str, stream: Pin<BoxedByteStream>);
-    async fn delete_file(&mut self, file_name: &str);
-    fn get_filenames(&self) -> Vec<&str>;
+    async fn refresh(&mut self) -> Result<(), ComponentError>;
+    async fn get_file_stream(
+        &mut self,
+        file_name: &str,
+    ) -> Result<Pin<BoxedByteStream>, ComponentError>;
+    async fn put_file(
+        &mut self,
+        file_name: &str,
+        stream: Pin<BoxedByteStream>,
+    ) -> Result<(), ComponentError>;
+    async fn delete_file(&mut self, file_name: &str) -> Result<(), ComponentError>;
+    fn get_filenames(&self) -> Result<Vec<&str>, ComponentError>;
     fn move_into_selected_dir(&mut self);
     fn move_out_of_selected_dir(&mut self);
     fn get_current_path(&self) -> String;
