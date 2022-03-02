@@ -1,7 +1,7 @@
 use std::{
     self,
     borrow::Borrow,
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
     task::Poll,
@@ -90,9 +90,10 @@ pub fn get_files_list(path: &Path) -> Result<Vec<FilesystemObject>, io::Error> {
 
 pub fn get_file_byte_stream(path: &Path) -> Result<FileBytesStream, io::Error> {
     let file = fs::OpenOptions::new()
-        .create(false)
-        .truncate(false)
-        .open(path)?;
+        .read(true)
+        .write(false)
+        .open(path)
+        .unwrap();
     Ok(FileBytesStream::new(file))
 }
 
