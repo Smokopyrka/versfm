@@ -1,7 +1,7 @@
 use std::{
-    env, fs,
+    env, fs, io,
     path::{Path, PathBuf},
-    pin::Pin, io,
+    pin::Pin,
 };
 
 use async_trait::async_trait;
@@ -182,7 +182,8 @@ impl FileCRUD for FilesystemList {
         file_name: &str,
     ) -> Result<Pin<BoxedByteStream>, ComponentError> {
         Ok(Box::pin(
-            filesystem::get_file_byte_stream(Path::new(&self.add_prefix(file_name))).unwrap(),
+            filesystem::get_file_byte_stream(Path::new(&self.add_prefix(file_name)))
+                .map_err(Self::handle_error)?,
         ))
     }
 
@@ -193,12 +194,13 @@ impl FileCRUD for FilesystemList {
     ) -> Result<(), ComponentError> {
         filesystem::write_file_from_stream(Path::new(&self.add_prefix(file_name)), stream)
             .await
-            .unwrap();
+            .map_err(Self::handle_error)?;
         Ok(())
     }
 
     async fn delete_file(&mut self, file_name: &str) -> Result<(), ComponentError> {
-        filesystem::remove_file(Path::new(&self.add_prefix(file_name))).unwrap();
+        filesystem::remove_file(Path::new(&self.add_prefix(file_name)))
+            .map_err(Self::handle_error)?;
         Ok(())
     }
 
