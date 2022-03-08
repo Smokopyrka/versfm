@@ -1,7 +1,7 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    pin::Pin,
+    pin::Pin, io,
 };
 
 use async_trait::async_trait;
@@ -57,6 +57,41 @@ impl FilesystemList {
             .into_iter()
             .map(|i| Box::new(ListEntry::new(i)))
             .collect()
+    }
+
+    fn handle_error(err: io::Error) -> ComponentError {
+        match err.kind() {
+            io::ErrorKind::NotFound => super::err::ComponentError::new(
+                String::from("File couldn't be found"),
+                super::err::ComponentErrorKind::FileNotFound,
+            ),
+            io::ErrorKind::PermissionDenied => super::err::ComponentError::new(
+                String::from("Insufficient file permissions to perform this operation"),
+                super::err::ComponentErrorKind::InsufficientPermissions,
+            ),
+            io::ErrorKind::AlreadyExists => super::err::ComponentError::new(
+                String::from("File already exists"),
+                super::err::ComponentErrorKind::AlreadyExists,
+            ),
+            io::ErrorKind::InvalidData => super::err::ComponentError::new(
+                String::from("File contains invalid data"),
+                super::err::ComponentErrorKind::InvalidData,
+            ),
+            io::ErrorKind::WriteZero | io::ErrorKind::UnexpectedEof => {
+                super::err::ComponentError::new(
+                    String::from("Operation was not able to complete"),
+                    super::err::ComponentErrorKind::Incomplete,
+                )
+            }
+            io::ErrorKind::Unsupported => super::err::ComponentError::new(
+                String::from("This operation is not supported"),
+                super::err::ComponentErrorKind::Unsupported,
+            ),
+            _ => super::err::ComponentError::new(
+                String::from("Unexpected error occured"),
+                super::err::ComponentErrorKind::Unexpected,
+            ),
+        }
     }
 }
 
