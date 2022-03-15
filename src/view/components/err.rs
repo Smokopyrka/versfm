@@ -1,32 +1,18 @@
 use std::fmt::{self};
 
-#[derive(Clone, Debug)]
-pub enum ComponentErrorKind {
-    AlreadyExists,
-    ConnectionProblem,
-    FileNotFound,
-    Incomplete,
-    InvalidData,
-    InsufficientPermissions,
-    IsDirectory,
-    IsNotDirectory,
-    Unexpected,
-    Unsupported,
-}
-
 #[derive(Debug, Clone)]
 pub struct ComponentError {
-    kind: ComponentErrorKind,
+    code: String,
     message: String,
 }
 
 impl ComponentError {
-    pub fn new(message: String, kind: ComponentErrorKind) -> ComponentError {
-        ComponentError { message, kind }
+    pub fn new(message: String, code: String) -> ComponentError {
+        ComponentError { message, code }
     }
 
-    pub fn kind(&self) -> &ComponentErrorKind {
-        &self.kind
+    pub fn code(&self) -> &str {
+        &self.code
     }
 
     pub fn message(&self) -> &str {
@@ -38,8 +24,8 @@ impl fmt::Display for ComponentError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "ComponentError: {{ Message: {}, Kind: {:?} }}",
-            &self.message, &self.kind
+            "ComponentError: {{ Message: {}, Code: {:?} }}",
+            &self.message, &self.code
         )
     }
 }
