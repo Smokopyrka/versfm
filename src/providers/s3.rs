@@ -1,15 +1,15 @@
-extern crate serde;
 extern crate quick_xml;
+extern crate serde;
 
-use std::{error::Error};
+use std::error::Error;
 
 use chrono::{DateTime, Utc};
 use rusoto_core::{credential::ProfileProvider, ByteStream, HttpClient, Region, RusotoError};
 use rusoto_s3::{
-    DeleteObjectRequest, GetObjectOutput, GetObjectRequest,
-    ListObjectsV2Request, PutObjectRequest, S3Client, S3};
+    DeleteObjectRequest, GetObjectOutput, GetObjectRequest, ListObjectsV2Request, PutObjectRequest,
+    S3Client, S3,
+};
 use serde::Deserialize;
-
 
 use crate::view::components::FileEntry;
 
@@ -17,10 +17,20 @@ use super::Kind;
 
 #[derive(Debug, Deserialize)]
 pub struct S3Error {
-    #[serde(rename="Code", default)]
+    #[serde(rename = "Code", default)]
     code: String,
-    #[serde(rename="Message", default)]
+    #[serde(rename = "Message", default)]
     message: String,
+}
+
+impl S3Error {
+    pub fn code(&self) -> &str {
+        &self.code
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 #[derive(Clone)]
@@ -50,47 +60,35 @@ pub struct S3Provider {
 }
 
 impl S3Provider {
-
     fn handle_error(err: RusotoError<impl Error>) -> S3Error {
         match err {
             RusotoError::Unknown(buf) => {
                 let text = buf.body_as_str();
                 let s3err: S3Error = quick_xml::de::from_str(text).unwrap();
                 s3err
+            }
+            RusotoError::HttpDispatch(err) => S3Error {
+                code: "Request Error".to_string(),
+                message: err.to_string(),
             },
-            RusotoError::HttpDispatch(err) => {
-                S3Error {
-                    code: "Request Error".to_string(),
-                    message: err.to_string(),
-                }
+            RusotoError::Credentials(err) => S3Error {
+                code: "Credentials Error".to_string(),
+                message: err.to_string(),
             },
-            RusotoError::Credentials(err) => {
-                S3Error {
-                    code: "Credentials Error".to_string(),
-                    message: err.to_string(),
-                }
-            }
-            RusotoError::Validation(msg) => {
-                S3Error {
-                    code: "Validation Error".to_string(),
-                    message: msg,
-                }
-            }
-            RusotoError::ParseError(msg) => {
-                S3Error {
-                    code: "ParsingError".to_string(),
-                    message: msg,
-                }
-            }
-            _ => {
-                S3Error {
-                    code: "Unknown Error".to_string(),
-                    message: "Unknown error occured".to_string(),
-                }
-            }
+            RusotoError::Validation(msg) => S3Error {
+                code: "Validation Error".to_string(),
+                message: msg,
+            },
+            RusotoError::ParseError(msg) => S3Error {
+                code: "ParsingError".to_string(),
+                message: msg,
+            },
+            _ => S3Error {
+                code: "Unknown Error".to_string(),
+                message: "Unknown error occured".to_string(),
+            },
         }
     }
-
 
     pub async fn new(bucket_name: &str) -> S3Provider {
         S3Provider {
@@ -103,10 +101,7 @@ impl S3Provider {
         }
     }
 
-    pub async fn list_objects (
-        &self,
-        prefix: Option<String>,
-    ) -> Result<Vec<S3Object>, S3Error> {
+    pub async fn list_objects(&self, prefix: Option<String>) -> Result<Vec<S3Object>, S3Error> {
         let mut request = ListObjectsV2Request::default();
         request.bucket = self.bucket_name.clone();
         request.prefix = prefix.clone();
@@ -162,47 +157,44 @@ impl S3Provider {
         Ok(result)
     }
 
-    pub async fn download_object(
-        &self,
-        object_name: &str,
-    ) -> Result<ByteStream, S3Error> {
+    pub async fn download_object(&self, object_name: &str) -> Result<ByteStream, S3Error> {
         let object: GetObjectOutput = self.get_object(object_name).await?;
         Ok(object.body.unwrap())
     }
 
-    async fn get_object(
-        &self,
-        object_name: &str,
-    ) -> Result<GetObjectOutput, S3Error> {
+    async fn get_object(&self, object_name: &str) -> Result<GetObjectOutput, S3Error> {
         let mut request = GetObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);
 
-        Ok(self.s3_client.get_object(request).await.map_err(Self::handle_error)?)
+        Ok(self
+            .s3_client
+            .get_object(request)
+            .await
+            .map_err(Self::handle_error)?)
     }
 
-    pub async fn delete_object(
-        &self,
-        object_name: &str,
-    ) -> Result<(), S3Error> {
+    pub async fn delete_object(&self, object_name: &str) -> Result<(), S3Error> {
         let mut request = DeleteObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);
-        self.s3_client.delete_object(request).await.map_err(Self::handle_error)?;
+        self.s3_client
+            .delete_object(request)
+            .await
+            .map_err(Self::handle_error)?;
         Ok(())
     }
 
-    pub async fn put_object(
-        &self,
-        object_name: &str,
-        content: ByteStream,
-    ) -> Result<(), S3Error> {
+    pub async fn put_object(&self, object_name: &str, content: ByteStream) -> Result<(), S3Error> {
         let mut request = PutObjectRequest::default();
         request.bucket = self.bucket_name.clone();
         request.key = String::from(object_name);
         request.body = Some(content);
 
-        self.s3_client.put_object(request).await.map_err(Self::handle_error)?;
+        self.s3_client
+            .put_object(request)
+            .await
+            .map_err(Self::handle_error)?;
         Ok(())
     }
 }

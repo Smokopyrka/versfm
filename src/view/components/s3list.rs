@@ -5,7 +5,7 @@ use super::{
     State, StatefulContainer, TuiDisplay,
 };
 use crate::providers::{
-    s3::{S3Object, S3Provider},
+    s3::{S3Error, S3Object, S3Provider},
     Kind,
 };
 
@@ -39,6 +39,10 @@ impl S3List {
             Some(prefix) => format!("{}{}", prefix, to),
             None => String::from(to),
         }
+    }
+
+    fn handle_err(err: S3Error) -> ComponentError {
+        ComponentError::new(err.message().to_string(), err.code().to_string())
     }
 }
 
@@ -132,7 +136,7 @@ impl FileCRUD for S3List {
             self.client
                 .download_object(&self.add_prefix(file_name))
                 .await
-                .unwrap(),
+                .map_err(Self::handle_err)?,
         ))
     }
 
@@ -149,7 +153,7 @@ impl FileCRUD for S3List {
         self.client
             .put_object(&self.add_prefix(file_name), content)
             .await
-            .unwrap();
+            .map_err(Self::handle_err)?;
         Ok(())
     }
 
@@ -157,7 +161,7 @@ impl FileCRUD for S3List {
         self.client
             .delete_object(&self.add_prefix(file_name))
             .await
-            .unwrap();
+            .map_err(Self::handle_err)?;
         Ok(())
     }
 
@@ -166,7 +170,7 @@ impl FileCRUD for S3List {
             .client
             .list_objects(self.s3_prefix.clone())
             .await
-            .unwrap();
+            .map_err(Self::handle_err)?;
         self.items = files
             .into_iter()
             .map(|i| Box::new(ListEntry::new(i)))
