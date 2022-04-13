@@ -36,7 +36,11 @@ impl MainScreen {
         client: Arc<S3Provider>,
     ) -> MainScreen {
         let mut s3_list = Box::new(S3List::new(client));
-        s3_list.refresh().await.unwrap();
+        let mut err_stack: Vec<ComponentError> = Vec::new();
+        s3_list
+            .refresh()
+            .await
+            .unwrap_or_else(|e| err_stack.push(e));
         let fs_list = Box::new(FilesystemList::new());
         let layout = Layout::default()
             .direction(Direction::Horizontal)
@@ -48,7 +52,7 @@ impl MainScreen {
             curr_list: CurrentList::LeftList,
             s3_list,
             fs_list,
-            err_stack: Vec::new(),
+            err_stack: err_stack,
         }
     }
 
