@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use tokio_stream::Stream;
 
-mod err;
+pub mod err;
 mod filesystem_list;
 mod s3list;
 
