@@ -41,8 +41,12 @@ impl S3List {
         }
     }
 
-    fn handle_err(err: S3Error) -> ComponentError {
-        ComponentError::new(err.message().to_string(), err.code().to_string())
+    fn handle_err(err: S3Error, file: Option<&str>) -> ComponentError {
+        ComponentError::new(
+            String::from("S3"),
+            format!("(File: {}) {}", file.unwrap_or(""), err.message()),
+            err.code().to_string(),
+        )
     }
 }
 
@@ -136,7 +140,7 @@ impl FileCRUD for S3List {
             self.client
                 .download_object(&self.add_prefix(file_name))
                 .await
-                .map_err(Self::handle_err)?,
+                .map_err(|e| Self::handle_err(e, Some(file_name)))?,
         ))
     }
 
@@ -153,7 +157,7 @@ impl FileCRUD for S3List {
         self.client
             .put_object(&self.add_prefix(file_name), content)
             .await
-            .map_err(Self::handle_err)?;
+            .map_err(|e| Self::handle_err(e, Some(file_name)))?;
         Ok(())
     }
 
@@ -161,7 +165,7 @@ impl FileCRUD for S3List {
         self.client
             .delete_object(&self.add_prefix(file_name))
             .await
-            .map_err(Self::handle_err)?;
+            .map_err(|e| Self::handle_err(e, Some(file_name)))?;
         Ok(())
     }
 
@@ -170,7 +174,7 @@ impl FileCRUD for S3List {
             .client
             .list_objects(self.s3_prefix.clone())
             .await
-            .map_err(Self::handle_err)?;
+            .map_err(|e| Self::handle_err(e, None))?;
         self.items = files
             .into_iter()
             .map(|i| Box::new(ListEntry::new(i)))

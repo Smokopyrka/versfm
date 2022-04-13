@@ -59,22 +59,30 @@ impl FilesystemList {
             .collect()
     }
 
-    fn handle_error(err: io::Error) -> ComponentError {
+    fn handle_error(err: io::Error, file: Option<&str>) -> ComponentError {
+        let file = file.unwrap_or("");
         let message = match err.kind() {
-            io::ErrorKind::NotFound => "File couldn't be found",
+            io::ErrorKind::NotFound => format!("(File: {}) File couldn't be found", file),
             io::ErrorKind::PermissionDenied => {
-                "Insufficient file permissions to perform this operation"
+                format!(
+                    "(File {}): Insufficient file permissions to perform this operation on file",
+                    file
+                )
             }
-            io::ErrorKind::AlreadyExists => "File already exists",
-            io::ErrorKind::InvalidData => "File contains invalid data",
+            io::ErrorKind::AlreadyExists => format!("(File: {}) File already exists", file),
+            io::ErrorKind::InvalidData => format!("(File: {}) File contains invalid data", file),
             io::ErrorKind::WriteZero | io::ErrorKind::UnexpectedEof => {
-                "Operation was not able to complete"
+                String::from("Operation was not able to complete")
             }
-            io::ErrorKind::Unsupported => "This operation is not supported",
-            _ => "Unexpected error occured",
+            io::ErrorKind::Unsupported => String::from("This operation is not supported"),
+            _ => String::from("Unexpected error occured"),
         };
 
-        ComponentError::new(message.to_string(), format!("{:?}", err.kind()))
+        ComponentError::new(
+            String::from("Local Filesystem"),
+            message,
+            format!("{:?}", err.kind()),
+        )
     }
 }
 
@@ -166,7 +174,7 @@ impl FileCRUD for FilesystemList {
     ) -> Result<Pin<BoxedByteStream>, ComponentError> {
         Ok(Box::pin(
             filesystem::get_file_byte_stream(Path::new(&self.add_prefix(file_name)))
-                .map_err(Self::handle_error)?,
+                .map_err(|e| Self::handle_error(e, Some(file_name)))?,
         ))
     }
 
@@ -177,13 +185,13 @@ impl FileCRUD for FilesystemList {
     ) -> Result<(), ComponentError> {
         filesystem::write_file_from_stream(Path::new(&self.add_prefix(file_name)), stream)
             .await
-            .map_err(Self::handle_error)?;
+            .map_err(|e| Self::handle_error(e, Some(file_name)))?;
         Ok(())
     }
 
     async fn delete_file(&mut self, file_name: &str) -> Result<(), ComponentError> {
         filesystem::remove_file(Path::new(&self.add_prefix(file_name)))
-            .map_err(Self::handle_error)?;
+            .map_err(|e| Self::handle_error(e, Some(file_name)))?;
         Ok(())
     }
 

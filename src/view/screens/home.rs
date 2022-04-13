@@ -182,7 +182,14 @@ impl MainScreen {
     fn get_err_list(errs: &Vec<ComponentError>) -> List {
         let mut items: Vec<ListItem> = errs
             .iter()
-            .map(|e| ListItem::new(format!("Err: {} - {}", e.code(), e.message())))
+            .map(|e| {
+                ListItem::new(format!(
+                    "{} Err: {} - {}",
+                    e.component(),
+                    e.code(),
+                    e.message()
+                ))
+            })
             .collect();
         items.push(ListItem::new("Press ENTER to continue"));
         List::new(items)
