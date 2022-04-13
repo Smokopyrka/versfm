@@ -56,6 +56,17 @@ impl MainScreen {
         }
     }
 
+    async fn refresh_lists(&mut self) {
+        self.s3_list
+            .refresh()
+            .await
+            .unwrap_or_else(|e| self.err_stack.push(e));
+        self.fs_list
+            .refresh()
+            .await
+            .unwrap_or_else(|e| self.err_stack.push(e));
+    }
+
     pub async fn handle_event(&mut self, event: KeyEvent) {
         let curr_list = self.get_curr_list();
 
@@ -65,31 +76,18 @@ impl MainScreen {
                     self.move_items().await;
                     self.copy_items().await;
                     self.delete_items().await;
-                    self.s3_list
-                        .refresh()
-                        .await
-                        .unwrap_or_else(|e| self.err_stack.push(e));
-                    self.fs_list
-                        .refresh()
-                        .await
-                        .unwrap_or_else(|e| self.err_stack.push(e));
+                    self.refresh_lists().await;
                 } else {
                     self.err_stack.clear();
                 }
             }
             KeyCode::Char(' ') => {
                 curr_list.move_into_selected_dir();
-                curr_list
-                    .refresh()
-                    .await
-                    .unwrap_or_else(|e| self.err_stack.push(e));
+                self.refresh_lists().await;
             }
             KeyCode::Backspace => {
                 curr_list.move_out_of_selected_dir();
-                curr_list
-                    .refresh()
-                    .await
-                    .unwrap_or_else(|e| self.err_stack.push(e));
+                self.refresh_lists().await;
             }
             KeyCode::Down | KeyCode::Char('j') => curr_list.next(),
             KeyCode::Up | KeyCode::Char('k') => curr_list.previous(),
@@ -98,10 +96,7 @@ impl MainScreen {
             KeyCode::Char('m') => curr_list.select(State::ToMove),
             KeyCode::Char('c') => curr_list.select(State::ToCopy),
             KeyCode::Char('d') => curr_list.select(State::ToDelete),
-            KeyCode::Char('r') => curr_list
-                .refresh()
-                .await
-                .unwrap_or_else(|e| self.err_stack.push(e)),
+            KeyCode::Char('r') => self.refresh_lists().await,
             _ => (),
         }
     }
