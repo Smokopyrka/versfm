@@ -47,9 +47,8 @@ async fn delete_from(from: &mut Box<dyn FileList>) -> Result<(), ComponentError>
     Ok(())
 }
 
-fn get_err_list(errs: &Vec<ComponentError>) -> List {
-    let mut items: Vec<ListItem> = errs
-        .iter()
+fn get_err_list(errs: &Vec<ComponentError>) -> Vec<ListItem> {
+    errs.iter()
         .map(|e| {
             ListItem::new(format!(
                 "{} Err: {} - {}",
@@ -58,9 +57,7 @@ fn get_err_list(errs: &Vec<ComponentError>) -> List {
                 e.message()
             ))
         })
-        .collect();
-    items.push(ListItem::new("Press ENTER to continue"));
-    List::new(items)
+        .collect()
 }
 
 enum CurrentList {
@@ -218,8 +215,11 @@ impl MainScreen {
                 .constraints([Constraint::Percentage(100)])
                 .split(term_size);
 
+            let mut err_list = get_err_list(&self.err_stack);
+            err_list.push(ListItem::new("Press ENTER to continue"));
+            let err_list = List::new(err_list);
             self.term.draw(|f| {
-                f.render_widget(get_err_list(&self.err_stack), chunks[0]);
+                f.render_widget(err_list, chunks[0]);
             })?;
         }
         Ok(())
