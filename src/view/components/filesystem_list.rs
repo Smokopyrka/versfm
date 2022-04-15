@@ -30,19 +30,39 @@ impl FileEntry for FilesystemObject {
     }
 }
 
+impl From<ListEntry<FilesystemObject>> for ListEntry<Box<dyn FileEntry>> {
+    fn from(entry: ListEntry<FilesystemObject>) -> Self {
+        ListEntry {
+            value: Box::new(entry.value),
+            state: entry.state,
+        }
+    }
+}
+
+impl FromIterator<FilesystemObject> for Vec<Box<dyn FileEntry>> {
+    fn from_iter<I: IntoIterator<Item = FilesystemObject>>(iter: I) -> Self {
+        let mut c: Vec<Box<dyn FileEntry>> = Vec::new();
+        for i in iter {
+            c.push(Box::new(i));
+        }
+        c
+    }
+}
+
 pub struct FilesystemList {
+    user: String,
     curr_path: PathBuf,
-    items: Vec<Box<ListEntry<FilesystemObject>>>,
+    items: Vec<ListEntry<FilesystemObject>>,
     state: ListState,
 }
 
 impl FilesystemList {
     pub fn new() -> FilesystemList {
         let curr_path = env::current_dir().unwrap();
-        let items = Self::get_list_entries(&curr_path);
         FilesystemList {
+            user: whoami::username(),
             curr_path,
-            items,
+            items: Vec::new(),
             state: ListState::default(),
         }
     }
@@ -51,12 +71,12 @@ impl FilesystemList {
         format!("{}/{}", self.curr_path.to_str().unwrap(), to)
     }
 
-    fn get_list_entries(path: &Path) -> Vec<Box<ListEntry<FilesystemObject>>> {
-        filesystem::get_files_list(path)
-            .unwrap()
+    fn get_list_entries(path: &Path) -> Result<Vec<ListEntry<FilesystemObject>>, ComponentError> {
+        Ok(filesystem::get_files_list(path)
+            .map_err(|e| Self::handle_error(e, Some(path.as_os_str().to_str().unwrap())))?
             .into_iter()
-            .map(|i| Box::new(ListEntry::new(i)))
-            .collect()
+            .map(|i| ListEntry::new(i))
+            .collect())
     }
 
     fn handle_error(err: io::Error, file: Option<&str>) -> ComponentError {
@@ -142,7 +162,7 @@ impl SelectableContainer<Box<dyn FileEntry>> for FilesystemList {
         match self.state.selected() {
             None => (),
             Some(i) => {
-                let obj = self.items.get_mut(i).unwrap();
+                let obj = &mut self.items[i];
                 match obj.value().kind {
                     Kind::File => obj.select(selection),
                     Kind::Directory => (),
@@ -152,17 +172,11 @@ impl SelectableContainer<Box<dyn FileEntry>> for FilesystemList {
     }
 
     fn get_selected(&mut self, selection: State) -> Vec<Box<dyn FileEntry>> {
-        let files: Vec<Box<FilesystemObject>> = self
-            .items
+        self.items
             .iter()
             .filter(|i| *i.selected() == selection)
-            .map(|i| Box::new(i.value.clone()))
-            .collect();
-        let mut out: Vec<Box<dyn FileEntry>> = vec![];
-        for file in files {
-            out.push(file);
-        }
-        out
+            .map(|i| i.value.clone())
+            .collect()
     }
 }
 
@@ -196,7 +210,7 @@ impl FileCRUD for FilesystemList {
     }
 
     async fn refresh(&mut self) -> Result<(), ComponentError> {
-        self.items = Self::get_list_entries(&self.curr_path);
+        self.items = Self::get_list_entries(&self.curr_path)?;
         Ok(())
     }
 
@@ -204,14 +218,24 @@ impl FileCRUD for FilesystemList {
         Ok(self.items.iter().map(|i| i.value().name.as_str()).collect())
     }
 
-    fn move_out_of_selected_dir(&mut self) {
-        match self.curr_path.as_path().parent() {
+    async fn move_out_of_selected_dir(&mut self) -> Result<(), ComponentError> {
+        let current = self.curr_path.clone();
+        let current = current.as_path();
+        match current.parent() {
             Some(path) => self.curr_path = path.to_path_buf(),
             None => (),
         }
+        match self.refresh().await {
+            Err(err) => {
+                self.curr_path = current.to_path_buf();
+                self.move_into_selected_dir().await?;
+                Err(err)
+            }
+            Ok(_) => Ok(()),
+        }
     }
 
-    fn move_into_selected_dir(&mut self) {
+    async fn move_into_selected_dir(&mut self) -> Result<(), ComponentError> {
         let current = self.curr_path.to_str().unwrap();
         match self.state.selected() {
             None => (),
@@ -229,14 +253,24 @@ impl FileCRUD for FilesystemList {
                 }
             }
         };
+        match self.refresh().await {
+            Err(err) => {
+                self.move_out_of_selected_dir().await?;
+                Err(err)
+            }
+            Ok(_) => {
+                self.state.select(None);
+                Ok(())
+            }
+        }
     }
 
-    fn get_current_path(&self) -> String {
-        String::from(self.curr_path.to_str().unwrap())
+    fn get_current_path(&self) -> &str {
+        self.curr_path.to_str().unwrap()
     }
 
-    fn get_resource_name(&self) -> String {
-        whoami::username()
+    fn get_resource_name(&self) -> &str {
+        &self.user
     }
 }
 

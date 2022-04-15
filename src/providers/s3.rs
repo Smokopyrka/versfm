@@ -95,27 +95,33 @@ impl S3Provider {
             bucket_name: String::from(bucket_name),
             s3_client: S3Client::new_with(
                 HttpClient::new().unwrap(),
-                ProfileProvider::new().unwrap(),
+                ProfileProvider::new()
+                    .expect("Please provide your aws credentials in the .aws file"),
                 Region::EuCentral1,
             ),
         }
     }
 
-    pub async fn list_objects(&self, prefix: Option<String>) -> Result<Vec<S3Object>, S3Error> {
+    pub async fn list_objects(&self, prefix: &str) -> Result<Vec<S3Object>, S3Error> {
         let mut request = ListObjectsV2Request::default();
         request.bucket = self.bucket_name.clone();
-        request.prefix = prefix.clone();
+        request.prefix = if prefix.is_empty() {
+            None
+        } else {
+            Some(String::from(prefix))
+        };
         let objects = self.s3_client.list_objects_v2(request);
         let response = match objects.await.map_err(Self::handle_error)?.contents {
             None => return Ok(Vec::new()),
             Some(contents) => contents,
         };
-        let prefix = prefix.unwrap_or(String::new());
         let result = response
             .into_iter()
             .filter(|i| {
                 let key = i.key.clone().unwrap();
                 let (prefix, file_name) = key.split_at(prefix.len());
+                // Ensures function returns only top-level files and directories
+                // for given prefix. (entries like foo/bar.txt are ommited)
                 match (prefix, file_name) {
                     ("", name) => match name.find("/") {
                         None => true,
@@ -197,36 +203,4 @@ impl S3Provider {
             .map_err(Self::handle_error)?;
         Ok(())
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::S3Provider;
-    const BUCKET_NAME: &str = "s3tui-test-bucket";
-
-    #[tokio::test]
-    async fn list_objects_from_bucket() {
-        let cli = S3Provider::new(BUCKET_NAME).await;
-        let _objects = cli.list_objects(None).await;
-    }
-
-    // #[tokio::test]
-    // async fn get_object_from_bucket() {
-    //     let cli = Cli::new(BUCKET_NAME).await;
-    //     cli.download_object("get-object-test.txt", Path::new("get-object-test.txt"))
-    //         .await;
-    // }
-
-    #[tokio::test]
-    async fn remove_item_from_bucket() {
-        let cli = S3Provider::new(BUCKET_NAME).await;
-        cli.delete_object("delete-object-test.txt").await.unwrap();
-    }
-
-    // #[tokio::test]
-    // async fn put_item_into_bucket() {
-    //     let cli = Cli::new(BUCKET_NAME).await;
-    //     cli.put_object("put-object-test.txt", Path::new("put-object-test.txt"))
-    //         .await;
-    // }
 }

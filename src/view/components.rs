@@ -57,18 +57,6 @@ impl<T> ListEntry<T> {
     }
 }
 
-impl<T> From<Box<ListEntry<T>>> for ListEntry<Box<dyn FileEntry>>
-where
-    T: FileEntry + 'static,
-{
-    fn from(entry: Box<ListEntry<T>>) -> Self {
-        ListEntry {
-            value: Box::new(entry.value),
-            state: entry.state,
-        }
-    }
-}
-
 pub trait FileEntry {
     fn get_name(&self) -> &str;
     fn get_kind(&self) -> &Kind;
@@ -103,18 +91,17 @@ pub trait FileCRUD {
     ) -> Result<(), ComponentError>;
     async fn delete_file(&mut self, file_name: &str) -> Result<(), ComponentError>;
     fn get_filenames(&self) -> Result<Vec<&str>, ComponentError>;
-    fn move_into_selected_dir(&mut self);
-    fn move_out_of_selected_dir(&mut self);
-    fn get_current_path(&self) -> String;
-    fn get_resource_name(&self) -> String;
+    async fn move_into_selected_dir(&mut self) -> Result<(), ComponentError>;
+    async fn move_out_of_selected_dir(&mut self) -> Result<(), ComponentError>;
+    fn get_current_path(&self) -> &str;
+    fn get_resource_name(&self) -> &str;
 }
 
 pub trait TuiDisplay {
     fn make_file_list(&self, is_focused: bool) -> List;
-    // fn transform_list(options: &[ListEntry<Box<dyn FileEntry>>]) -> Vec<ListItem> {
 }
 
-fn transform_list<T>(options: &[Box<ListEntry<T>>]) -> Vec<ListItem>
+fn transform_list<T>(options: &[ListEntry<T>]) -> Vec<ListItem>
 where
     T: FileEntry,
 {

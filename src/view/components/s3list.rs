@@ -17,10 +17,19 @@ use tui::{
     widgets::{Block, Borders, List, ListState},
 };
 
+impl From<ListEntry<S3Object>> for ListEntry<Box<dyn FileEntry>> {
+    fn from(entry: ListEntry<S3Object>) -> Self {
+        ListEntry {
+            value: Box::new(entry.value),
+            state: entry.state,
+        }
+    }
+}
+
 pub struct S3List {
     client: Arc<S3Provider>,
-    s3_prefix: Option<String>,
-    items: Vec<Box<ListEntry<S3Object>>>,
+    s3_prefix: String,
+    items: Vec<ListEntry<S3Object>>,
     state: ListState,
 }
 
@@ -28,16 +37,17 @@ impl S3List {
     pub fn new(client: Arc<S3Provider>) -> S3List {
         S3List {
             client,
-            s3_prefix: None,
+            s3_prefix: String::new(),
             items: Vec::new(),
             state: ListState::default(),
         }
     }
 
     fn add_prefix(&self, to: &str) -> String {
-        match &self.s3_prefix {
-            Some(prefix) => format!("{}{}", prefix, to),
-            None => String::from(to),
+        if self.s3_prefix.is_empty() {
+            String::from(to)
+        } else {
+            format!("{}{}", self.s3_prefix, to)
         }
     }
 
@@ -172,13 +182,10 @@ impl FileCRUD for S3List {
     async fn refresh(&mut self) -> Result<(), ComponentError> {
         let files: Vec<S3Object> = self
             .client
-            .list_objects(self.s3_prefix.clone())
+            .list_objects(&self.s3_prefix)
             .await
-            .map_err(|e| Self::handle_err(e, None))?;
-        self.items = files
-            .into_iter()
-            .map(|i| Box::new(ListEntry::new(i)))
-            .collect();
+            .map_err(|e| Self::handle_err(e, Some(&self.s3_prefix)))?;
+        self.items = files.into_iter().map(|i| ListEntry::new(i)).collect();
         Ok(())
     }
 
@@ -186,39 +193,53 @@ impl FileCRUD for S3List {
         Ok(self.items.iter().map(|i| i.value().name.as_str()).collect())
     }
 
-    fn move_into_selected_dir(&mut self) {
-        let mut current = self.s3_prefix.clone().unwrap_or(String::new());
+    async fn move_into_selected_dir(&mut self) -> Result<(), ComponentError> {
         match self.state.selected() {
             None => (),
             Some(i) => {
                 let selected = self.items[i].value.get_name();
                 if selected.chars().last().unwrap() == '/' {
-                    current.push_str(selected);
-                    self.s3_prefix = Some(current);
+                    self.s3_prefix.push_str(selected);
                 }
             }
         };
-    }
-
-    fn move_out_of_selected_dir(&mut self) {
-        self.s3_prefix = match &self.s3_prefix {
-            None => return,
-            Some(prefix) => prefix
-                .rmatch_indices('/')
-                .nth(1)
-                .map(|(i, _)| String::from(&prefix[..(i + 1)])),
-        };
-    }
-
-    fn get_current_path(&self) -> String {
-        match &self.s3_prefix {
-            Some(prefix) => prefix.clone(),
-            None => String::new(),
+        match self.refresh().await {
+            Err(err) => {
+                self.move_out_of_selected_dir().await?;
+                Err(err)
+            }
+            Ok(_) => {
+                self.state.select(None);
+                Ok(())
+            }
         }
     }
 
-    fn get_resource_name(&self) -> String {
-        self.client.bucket_name.clone()
+    async fn move_out_of_selected_dir(&mut self) -> Result<(), ComponentError> {
+        let current = String::from(&self.s3_prefix);
+        if !current.is_empty() {
+            self.s3_prefix = current
+                .rmatch_indices('/')
+                .nth(1)
+                .map(|(i, _)| String::from(&current[..(i + 1)]))
+                .unwrap_or(String::from(""));
+        };
+        match self.refresh().await {
+            Err(err) => {
+                self.s3_prefix = current;
+                self.move_into_selected_dir().await?;
+                Err(err)
+            }
+            Ok(_) => Ok(()),
+        }
+    }
+
+    fn get_current_path(&self) -> &str {
+        &self.s3_prefix
+    }
+
+    fn get_resource_name(&self) -> &str {
+        &self.client.bucket_name
     }
 }
 

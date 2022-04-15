@@ -78,13 +78,17 @@ impl MainScreen {
         term: Terminal<CrosstermBackend<Stdout>>,
         client: Arc<S3Provider>,
     ) -> MainScreen {
-        let mut s3_list = Box::new(S3List::new(client));
         let mut err_stack: Vec<ComponentError> = Vec::new();
+        let mut s3_list = Box::new(S3List::new(client));
         s3_list
             .refresh()
             .await
             .unwrap_or_else(|e| err_stack.push(e));
-        let fs_list = Box::new(FilesystemList::new());
+        let mut fs_list = Box::new(FilesystemList::new());
+        fs_list
+            .refresh()
+            .await
+            .unwrap_or_else(|e| err_stack.push(e));
         MainScreen {
             term,
             curr_list: CurrentList::LeftList,
@@ -109,12 +113,16 @@ impl MainScreen {
                 }
             }
             KeyCode::Char(' ') => {
-                curr_list.move_into_selected_dir();
-                self.refresh_lists().await;
+                curr_list
+                    .move_into_selected_dir()
+                    .await
+                    .unwrap_or_else(|e| self.err_stack.push(e));
             }
             KeyCode::Backspace => {
-                curr_list.move_out_of_selected_dir();
-                self.refresh_lists().await;
+                curr_list
+                    .move_out_of_selected_dir()
+                    .await
+                    .unwrap_or_else(|e| self.err_stack.push(e));
             }
             KeyCode::Down | KeyCode::Char('j') => curr_list.next(),
             KeyCode::Up | KeyCode::Char('k') => curr_list.previous(),
