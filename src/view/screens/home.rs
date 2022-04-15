@@ -16,6 +16,53 @@ use crate::view::components::{
     err::ComponentError, FileCRUD, FileList, FilesystemList, S3List, State,
 };
 
+async fn move_from_to(
+    from: &mut Box<dyn FileList>,
+    to: &mut Box<dyn FileList>,
+) -> Result<(), ComponentError> {
+    for selected in from.get_selected(State::ToMove) {
+        let name = selected.get_name();
+        to.put_file(name, from.get_file_stream(name).await?).await?;
+        from.delete_file(name).await?;
+    }
+    Ok(())
+}
+
+async fn copy_from_to(
+    from: &mut Box<dyn FileList>,
+    to: &mut Box<dyn FileList>,
+) -> Result<(), ComponentError> {
+    for selected in from.get_selected(State::ToCopy) {
+        let name = selected.get_name();
+        to.put_file(name, from.get_file_stream(name).await?).await?;
+    }
+    Ok(())
+}
+
+async fn delete_from(from: &mut Box<dyn FileList>) -> Result<(), ComponentError> {
+    for selected in from.get_selected(State::ToDelete) {
+        let name = selected.get_name();
+        from.delete_file(name).await?;
+    }
+    Ok(())
+}
+
+fn get_err_list(errs: &Vec<ComponentError>) -> List {
+    let mut items: Vec<ListItem> = errs
+        .iter()
+        .map(|e| {
+            ListItem::new(format!(
+                "{} Err: {} - {}",
+                e.component(),
+                e.code(),
+                e.message()
+            ))
+        })
+        .collect();
+    items.push(ListItem::new("Press ENTER to continue"));
+    List::new(items)
+}
+
 enum CurrentList {
     LeftList,
     RightList,
@@ -23,7 +70,6 @@ enum CurrentList {
 
 pub struct MainScreen {
     term: Terminal<CrosstermBackend<Stdout>>,
-    layout: Layout,
     curr_list: CurrentList,
     s3_list: Box<dyn FileList>,
     fs_list: Box<dyn FileList>,
@@ -42,29 +88,13 @@ impl MainScreen {
             .await
             .unwrap_or_else(|e| err_stack.push(e));
         let fs_list = Box::new(FilesystemList::new());
-        let layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .margin(1)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref());
         MainScreen {
-            layout,
             term,
             curr_list: CurrentList::LeftList,
             s3_list,
             fs_list,
             err_stack: err_stack,
         }
-    }
-
-    async fn refresh_lists(&mut self) {
-        self.s3_list
-            .refresh()
-            .await
-            .unwrap_or_else(|e| self.err_stack.push(e));
-        self.fs_list
-            .refresh()
-            .await
-            .unwrap_or_else(|e| self.err_stack.push(e));
     }
 
     pub async fn handle_event(&mut self, event: KeyEvent) {
@@ -101,62 +131,42 @@ impl MainScreen {
         }
     }
 
-    async fn copy_items(&mut self) {
-        Self::copy_from_to(&mut self.fs_list, &mut self.s3_list)
+    async fn refresh_lists(&mut self) {
+        self.s3_list
+            .refresh()
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
-        Self::copy_from_to(&mut self.s3_list, &mut self.fs_list)
+        self.fs_list
+            .refresh()
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
     }
 
-    async fn copy_from_to(
-        from: &mut Box<dyn FileList>,
-        to: &mut Box<dyn FileList>,
-    ) -> Result<(), ComponentError> {
-        for selected in from.get_selected(State::ToCopy) {
-            let name = selected.get_name();
-            to.put_file(name, from.get_file_stream(name).await?).await?;
-        }
-        Ok(())
+    async fn copy_items(&mut self) {
+        copy_from_to(&mut self.fs_list, &mut self.s3_list)
+            .await
+            .unwrap_or_else(|e| self.err_stack.push(e));
+        copy_from_to(&mut self.s3_list, &mut self.fs_list)
+            .await
+            .unwrap_or_else(|e| self.err_stack.push(e));
     }
 
     async fn delete_items(&mut self) {
-        Self::delete_from(&mut self.s3_list)
+        delete_from(&mut self.s3_list)
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
-        Self::delete_from(&mut self.fs_list)
+        delete_from(&mut self.fs_list)
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
-    }
-
-    async fn delete_from(from: &mut Box<dyn FileList>) -> Result<(), ComponentError> {
-        for selected in from.get_selected(State::ToDelete) {
-            let name = selected.get_name();
-            from.delete_file(name).await?;
-        }
-        Ok(())
     }
 
     async fn move_items(&mut self) {
-        Self::move_from_to(&mut self.fs_list, &mut self.s3_list)
+        move_from_to(&mut self.fs_list, &mut self.s3_list)
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
-        Self::move_from_to(&mut self.s3_list, &mut self.fs_list)
+        move_from_to(&mut self.s3_list, &mut self.fs_list)
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
-    }
-
-    async fn move_from_to(
-        from: &mut Box<dyn FileList>,
-        to: &mut Box<dyn FileList>,
-    ) -> Result<(), ComponentError> {
-        for selected in from.get_selected(State::ToMove) {
-            let name = selected.get_name();
-            to.put_file(name, from.get_file_stream(name).await?).await?;
-            from.delete_file(name).await?;
-        }
-        Ok(())
     }
 
     fn get_curr_list(&mut self) -> &mut Box<dyn FileList> {
@@ -178,43 +188,40 @@ impl MainScreen {
         Ok(())
     }
 
-    fn get_err_list(errs: &Vec<ComponentError>) -> List {
-        let mut items: Vec<ListItem> = errs
-            .iter()
-            .map(|e| {
-                ListItem::new(format!(
-                    "{} Err: {} - {}",
-                    e.component(),
-                    e.code(),
-                    e.message()
-                ))
-            })
-            .collect();
-        items.push(ListItem::new("Press ENTER to continue"));
-        List::new(items)
-    }
-
     pub fn render(&mut self) -> Result<(), Box<dyn Error>> {
-        let chunks = self.layout.split(self.term.size().unwrap());
-        self.term.draw(|f| {
-            if self.err_stack.is_empty() {
+        let term_size = self.term.size().unwrap();
+        if self.err_stack.is_empty() {
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .margin(1)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(term_size);
+
+            self.term.draw(|f| {
                 f.render_stateful_widget(
                     self.s3_list
                         .make_file_list(matches!(self.curr_list, CurrentList::LeftList)),
                     chunks[0],
                     &mut self.s3_list.get_current(),
                 );
-
                 f.render_stateful_widget(
                     self.fs_list
                         .make_file_list(matches!(self.curr_list, CurrentList::RightList)),
                     chunks[1],
                     &mut self.fs_list.get_current(),
                 );
-            } else {
-                f.render_widget(Self::get_err_list(&self.err_stack), chunks[0]);
-            }
-        })?;
+            })?;
+        } else {
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .margin(1)
+                .constraints([Constraint::Percentage(100)])
+                .split(term_size);
+
+            self.term.draw(|f| {
+                f.render_widget(get_err_list(&self.err_stack), chunks[0]);
+            })?;
+        }
         Ok(())
     }
 }
