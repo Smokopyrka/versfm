@@ -147,7 +147,7 @@ impl SelectableContainer<String> for FilesystemList {
         self.items
             .iter()
             .filter(|i| *i.selected() == selection)
-            .map(|i| i.value().get_name().to_string())
+            .map(|i| i.value().get_name().to_owned())
             .collect()
     }
 }

@@ -46,7 +46,7 @@ impl S3List {
 
     fn add_prefix(&self, to: &str) -> String {
         if self.s3_prefix.is_empty() {
-            String::from(to)
+            to.to_owned()
         } else {
             format!("{}{}", self.s3_prefix, to)
         }
@@ -56,7 +56,7 @@ impl S3List {
         ComponentError::new(
             String::from("S3"),
             format!("(File: {}) {}", file.unwrap_or(""), err.message()),
-            err.code().to_string(),
+            err.code().to_owned(),
         )
     }
 }
@@ -119,7 +119,7 @@ impl SelectableContainer<String> for S3List {
         self.items
             .iter()
             .filter(|i| *i.selected() == selection)
-            .map(|i| i.value().get_name().to_string())
+            .map(|i| i.value().get_name().to_owned())
             .collect()
     }
 }
@@ -200,12 +200,12 @@ impl FileCRUD for S3List {
     }
 
     async fn move_out_of_selected_dir(&mut self) -> Result<(), ComponentError> {
-        let current = String::from(&self.s3_prefix);
+        let current = self.s3_prefix.to_owned();
         if !current.is_empty() {
             self.s3_prefix = current
                 .rmatch_indices('/')
                 .nth(1)
-                .map(|(i, _)| String::from(&current[..(i + 1)]))
+                .map(|(i, _)| current[..(i + 1)].to_owned())
                 .unwrap_or(String::from(""));
         };
         match self.refresh().await {

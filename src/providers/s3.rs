@@ -56,31 +56,31 @@ impl S3Provider {
                 s3err
             }
             RusotoError::HttpDispatch(err) => S3Error {
-                code: "Request Error".to_string(),
+                code: String::from("Request Error"),
                 message: err.to_string(),
             },
             RusotoError::Credentials(err) => S3Error {
-                code: "Credentials Error".to_string(),
+                code: String::from("Credentials Error"),
                 message: err.to_string(),
             },
             RusotoError::Validation(msg) => S3Error {
-                code: "Validation Error".to_string(),
+                code: String::from("Validation Error"),
                 message: msg,
             },
             RusotoError::ParseError(msg) => S3Error {
-                code: "ParsingError".to_string(),
+                code: String::from("ParsingError"),
                 message: msg,
             },
             _ => S3Error {
-                code: "Unknown Error".to_string(),
-                message: "Unknown error occured".to_string(),
+                code: String::from("Unknown Error"),
+                message: String::from("Unknown error occured"),
             },
         }
     }
 
     pub async fn new(bucket_name: &str) -> S3Provider {
         S3Provider {
-            bucket_name: String::from(bucket_name),
+            bucket_name: bucket_name.to_owned(),
             s3_client: S3Client::new_with(
                 HttpClient::new().unwrap(),
                 ProfileProvider::new()
@@ -96,7 +96,7 @@ impl S3Provider {
         request.prefix = if prefix.is_empty() {
             None
         } else {
-            Some(String::from(prefix))
+            Some(prefix.to_owned())
         };
         let objects = self.s3_client.list_objects_v2(request);
         let response = match objects.await.map_err(Self::handle_error)?.contents {
@@ -133,8 +133,8 @@ impl S3Provider {
                     kind = Kind::File;
                 }
                 S3Object {
-                    name: String::from(file_name),
-                    prefix: String::from(prefix),
+                    name: file_name.to_owned(),
+                    prefix: prefix.to_owned(),
                     kind,
                     size: i.size,
                     last_mod: DateTime::parse_from_rfc3339(i.last_modified.unwrap().as_str())
@@ -159,7 +159,7 @@ impl S3Provider {
     async fn get_object(&self, object_name: &str) -> Result<GetObjectOutput, S3Error> {
         let mut request = GetObjectRequest::default();
         request.bucket = self.bucket_name.clone();
-        request.key = String::from(object_name);
+        request.key = object_name.to_owned();
 
         Ok(self
             .s3_client
@@ -171,7 +171,7 @@ impl S3Provider {
     pub async fn delete_object(&self, object_name: &str) -> Result<(), S3Error> {
         let mut request = DeleteObjectRequest::default();
         request.bucket = self.bucket_name.clone();
-        request.key = String::from(object_name);
+        request.key = object_name.to_owned();
         self.s3_client
             .delete_object(request)
             .await
@@ -182,7 +182,7 @@ impl S3Provider {
     pub async fn put_object(&self, object_name: &str, content: ByteStream) -> Result<(), S3Error> {
         let mut request = PutObjectRequest::default();
         request.bucket = self.bucket_name.clone();
-        request.key = String::from(object_name);
+        request.key = object_name.to_owned();
         request.body = Some(content);
 
         self.s3_client

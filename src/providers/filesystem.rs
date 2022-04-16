@@ -66,12 +66,12 @@ pub fn get_files_list(path: &Path) -> Result<Vec<FilesystemObject>, io::Error> {
         return Ok(fs::read_dir(path)?
             .map(|f| {
                 let path = f.unwrap().path();
-                let mut file_name = String::from(
-                    path.file_name()
-                        .unwrap()
-                        .to_str()
-                        .expect("Cannot convert non-utf8 filename to string"),
-                );
+                let mut file_name = path
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .expect("Cannot convert non-utf8 filename to string")
+                    .to_owned();
                 let kind: Kind;
                 if fs::metadata(&path).unwrap().is_dir() {
                     file_name.push_str("/");

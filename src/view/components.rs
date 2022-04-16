@@ -105,7 +105,7 @@ where
     options
         .iter()
         .map(|o| {
-            let mut text = String::from(o.value().get_name());
+            let mut text = o.value().get_name().to_owned();
             let mut style = Style::default();
 
             if let Kind::Directory = o.value().get_kind() {
