@@ -27,15 +27,14 @@ pub enum State {
     ToCopy,
 }
 
-#[derive(Clone)]
-pub struct ListEntry<T> {
+pub struct SelectableEntry<T> {
     value: T,
     state: State,
 }
 
-impl<T> ListEntry<T> {
-    fn new(value: T) -> ListEntry<T> {
-        ListEntry {
+impl<T> SelectableEntry<T> {
+    fn new(value: T) -> SelectableEntry<T> {
+        SelectableEntry {
             value: value,
             state: State::Unselected,
         }
@@ -70,9 +69,7 @@ pub trait StatefulContainer {
 
 pub trait SelectableContainer<T> {
     fn select(&mut self, selection: State);
-    fn get_selected(&mut self, selection: State) -> Vec<T>;
-    fn get(&self, i: usize) -> ListEntry<T>;
-    fn get_items(&self) -> Vec<ListEntry<T>>;
+    fn get_selected(&self, selection: State) -> Vec<T>;
 }
 
 pub type BoxedByteStream = Box<dyn Stream<Item = Result<Bytes, io::Error>> + Send + 'static>;
@@ -97,11 +94,11 @@ pub trait FileCRUD {
     fn get_resource_name(&self) -> &str;
 }
 
-pub trait TuiDisplay {
+pub trait TuiListDisplay {
     fn make_file_list(&self, is_focused: bool) -> List;
 }
 
-fn transform_list<T>(options: &[ListEntry<T>]) -> Vec<ListItem>
+fn transform_list<T>(options: &[SelectableEntry<T>]) -> Vec<ListItem>
 where
     T: FileEntry,
 {
@@ -135,10 +132,10 @@ where
 }
 
 pub trait FileList:
-    StatefulContainer + SelectableContainer<Box<dyn FileEntry>> + FileCRUD + TuiDisplay
+    StatefulContainer + SelectableContainer<String> + FileCRUD + TuiListDisplay
 {
 }
 impl<T> FileList for T where
-    T: StatefulContainer + SelectableContainer<Box<dyn FileEntry>> + FileCRUD + TuiDisplay
+    T: StatefulContainer + SelectableContainer<String> + FileCRUD + TuiListDisplay
 {
 }

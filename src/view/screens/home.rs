@@ -16,14 +16,14 @@ use crate::view::components::{
     err::ComponentError, FileCRUD, FileList, FilesystemList, S3List, State,
 };
 
-async fn move_from_to(
+async fn move_from_to<'a>(
     from: &mut Box<dyn FileList>,
     to: &mut Box<dyn FileList>,
 ) -> Result<(), ComponentError> {
     for selected in from.get_selected(State::ToMove) {
-        let name = selected.get_name();
-        to.put_file(name, from.get_file_stream(name).await?).await?;
-        from.delete_file(name).await?;
+        to.put_file(&selected, from.get_file_stream(&selected).await?)
+            .await?;
+        from.delete_file(&selected).await?;
     }
     Ok(())
 }
@@ -33,16 +33,15 @@ async fn copy_from_to(
     to: &mut Box<dyn FileList>,
 ) -> Result<(), ComponentError> {
     for selected in from.get_selected(State::ToCopy) {
-        let name = selected.get_name();
-        to.put_file(name, from.get_file_stream(name).await?).await?;
+        to.put_file(&selected, from.get_file_stream(&selected).await?)
+            .await?;
     }
     Ok(())
 }
 
 async fn delete_from(from: &mut Box<dyn FileList>) -> Result<(), ComponentError> {
     for selected in from.get_selected(State::ToDelete) {
-        let name = selected.get_name();
-        from.delete_file(name).await?;
+        from.delete_file(&selected).await?;
     }
     Ok(())
 }

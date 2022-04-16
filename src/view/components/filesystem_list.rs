@@ -16,8 +16,8 @@ use crate::providers::{
 };
 
 use super::{
-    err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, ListEntry, SelectableContainer,
-    State, StatefulContainer, TuiDisplay,
+    err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, SelectableContainer,
+    SelectableEntry, State, StatefulContainer, TuiListDisplay,
 };
 
 impl FileEntry for FilesystemObject {
@@ -30,29 +30,10 @@ impl FileEntry for FilesystemObject {
     }
 }
 
-impl From<ListEntry<FilesystemObject>> for ListEntry<Box<dyn FileEntry>> {
-    fn from(entry: ListEntry<FilesystemObject>) -> Self {
-        ListEntry {
-            value: Box::new(entry.value),
-            state: entry.state,
-        }
-    }
-}
-
-impl FromIterator<FilesystemObject> for Vec<Box<dyn FileEntry>> {
-    fn from_iter<I: IntoIterator<Item = FilesystemObject>>(iter: I) -> Self {
-        let mut c: Vec<Box<dyn FileEntry>> = Vec::new();
-        for i in iter {
-            c.push(Box::new(i));
-        }
-        c
-    }
-}
-
 pub struct FilesystemList {
     user: String,
     curr_path: PathBuf,
-    items: Vec<ListEntry<FilesystemObject>>,
+    items: Vec<SelectableEntry<FilesystemObject>>,
     state: ListState,
 }
 
@@ -71,11 +52,13 @@ impl FilesystemList {
         format!("{}/{}", self.curr_path.to_str().unwrap(), to)
     }
 
-    fn get_list_entries(path: &Path) -> Result<Vec<ListEntry<FilesystemObject>>, ComponentError> {
+    fn get_list_entries(
+        path: &Path,
+    ) -> Result<Vec<SelectableEntry<FilesystemObject>>, ComponentError> {
         Ok(filesystem::get_files_list(path)
             .map_err(|e| Self::handle_error(e, Some(path.as_os_str().to_str().unwrap())))?
             .into_iter()
-            .map(|i| ListEntry::new(i))
+            .map(|i| SelectableEntry::new(i))
             .collect())
     }
 
@@ -146,18 +129,7 @@ impl StatefulContainer for FilesystemList {
     }
 }
 
-impl SelectableContainer<Box<dyn FileEntry>> for FilesystemList {
-    fn get(&self, i: usize) -> ListEntry<Box<dyn FileEntry>> {
-        ListEntry::from(self.items[i].clone())
-    }
-
-    fn get_items(&self) -> Vec<ListEntry<Box<dyn FileEntry>>> {
-        self.items
-            .iter()
-            .map(|i| ListEntry::from(i.clone()))
-            .collect()
-    }
-
+impl SelectableContainer<String> for FilesystemList {
     fn select(&mut self, selection: State) {
         match self.state.selected() {
             None => (),
@@ -171,11 +143,11 @@ impl SelectableContainer<Box<dyn FileEntry>> for FilesystemList {
         };
     }
 
-    fn get_selected(&mut self, selection: State) -> Vec<Box<dyn FileEntry>> {
+    fn get_selected(&self, selection: State) -> Vec<String> {
         self.items
             .iter()
             .filter(|i| *i.selected() == selection)
-            .map(|i| i.value.clone())
+            .map(|i| i.value().get_name().to_string())
             .collect()
     }
 }
@@ -274,7 +246,7 @@ impl FileCRUD for FilesystemList {
     }
 }
 
-impl TuiDisplay for FilesystemList {
+impl TuiListDisplay for FilesystemList {
     fn make_file_list(&self, is_focused: bool) -> List {
         let mut style = Style::default().fg(Color::White);
         if is_focused {

@@ -11,8 +11,6 @@ use rusoto_s3::{
 };
 use serde::Deserialize;
 
-use crate::view::components::FileEntry;
-
 use super::Kind;
 
 #[derive(Debug, Deserialize)]
@@ -42,16 +40,6 @@ pub struct S3Object {
     pub last_mod: DateTime<Utc>,
     pub storage_class: Option<String>,
     pub owner: Option<String>,
-}
-
-impl FileEntry for S3Object {
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-
-    fn get_kind(&self) -> &Kind {
-        &self.kind
-    }
 }
 
 pub struct S3Provider {

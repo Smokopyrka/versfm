@@ -1,8 +1,8 @@
 use std::{pin::Pin, sync::Arc};
 
 use super::{
-    err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, ListEntry, SelectableContainer,
-    State, StatefulContainer, TuiDisplay,
+    err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, SelectableContainer,
+    SelectableEntry, State, StatefulContainer, TuiListDisplay,
 };
 use crate::providers::{
     s3::{S3Error, S3Object, S3Provider},
@@ -17,19 +17,20 @@ use tui::{
     widgets::{Block, Borders, List, ListState},
 };
 
-impl From<ListEntry<S3Object>> for ListEntry<Box<dyn FileEntry>> {
-    fn from(entry: ListEntry<S3Object>) -> Self {
-        ListEntry {
-            value: Box::new(entry.value),
-            state: entry.state,
-        }
+impl FileEntry for S3Object {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_kind(&self) -> &Kind {
+        &self.kind
     }
 }
 
 pub struct S3List {
     client: Arc<S3Provider>,
     s3_prefix: String,
-    items: Vec<ListEntry<S3Object>>,
+    items: Vec<SelectableEntry<S3Object>>,
     state: ListState,
 }
 
@@ -100,18 +101,7 @@ impl StatefulContainer for S3List {
     }
 }
 
-impl SelectableContainer<Box<dyn FileEntry>> for S3List {
-    fn get(&self, i: usize) -> ListEntry<Box<dyn FileEntry>> {
-        ListEntry::from(self.items[i].clone())
-    }
-
-    fn get_items(&self) -> Vec<ListEntry<Box<dyn FileEntry>>> {
-        self.items
-            .iter()
-            .map(|i| ListEntry::from(i.clone()))
-            .collect()
-    }
-
+impl SelectableContainer<String> for S3List {
     fn select(&mut self, selection: State) {
         match self.state.selected() {
             None => (),
@@ -125,18 +115,12 @@ impl SelectableContainer<Box<dyn FileEntry>> for S3List {
         };
     }
 
-    fn get_selected(&mut self, selection: State) -> Vec<Box<dyn FileEntry>> {
-        let files: Vec<S3Object> = self
-            .items
+    fn get_selected(&self, selection: State) -> Vec<String> {
+        self.items
             .iter()
             .filter(|i| *i.selected() == selection)
-            .map(|i| i.clone().value)
-            .collect();
-        let mut out: Vec<Box<dyn FileEntry>> = vec![];
-        for file in files {
-            out.push(Box::new(file));
-        }
-        out
+            .map(|i| i.value().get_name().to_string())
+            .collect()
     }
 }
 
@@ -185,7 +169,7 @@ impl FileCRUD for S3List {
             .list_objects(&self.s3_prefix)
             .await
             .map_err(|e| Self::handle_err(e, Some(&self.s3_prefix)))?;
-        self.items = files.into_iter().map(|i| ListEntry::new(i)).collect();
+        self.items = files.into_iter().map(|i| SelectableEntry::new(i)).collect();
         Ok(())
     }
 
@@ -243,7 +227,7 @@ impl FileCRUD for S3List {
     }
 }
 
-impl TuiDisplay for S3List {
+impl TuiListDisplay for S3List {
     fn make_file_list(&self, is_focused: bool) -> List {
         let mut style = Style::default().fg(Color::White);
         if is_focused {
