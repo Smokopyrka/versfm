@@ -117,7 +117,7 @@ where
                     text.push_str(" [D]");
                 }
                 State::ToCopy => {
-                    style = style.bg(Color::LightGreen);
+                    style = style.bg(Color::Green);
                     text.push_str(" [C]");
                 }
                 _ => (),
