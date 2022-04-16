@@ -3,6 +3,7 @@ authors = ["Dominik Łapiński <dominiklapinski.pl@gmail.com>"]
 categories = ["command-line-utilities"]
 homepage = "https://github.com/Smokopyrka/versfm"
 repository = "https://github.com/Smokopyrka/versfm"
+license = "MIT"
 name = "versfm"
 version = "0.0.1"
 edition = "2021"
