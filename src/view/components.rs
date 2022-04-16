@@ -4,10 +4,10 @@ use async_trait::async_trait;
 
 pub mod err;
 mod filesystem_list;
-mod s3list;
+mod s3_list;
 
 pub use filesystem_list::FilesystemList;
-pub use s3list::S3List;
+pub use s3_list::S3List;
 use tui::{
     style::{Color, Modifier, Style},
     widgets::{List, ListItem, ListState},
