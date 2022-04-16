@@ -6,6 +6,22 @@
 
 ![Imgur Image](https://imgur.com/vPps0GZ.gif)
 
+## Usage
+
+In order to properly run the tool, you need to provide the name of the S3 bucket you want to connect to as its first command line argument. (eg. `versfm my-bucket-name`).
+After launching the application, you can navigate in the following way:
+- `LEFT_ARROW` or `H` - Move to the left pane
+- `RIGHT_ARROW` or `L` - Move to the right pane
+- `UP_ARROW` or `K` - Move up in the currently selected list
+- `DOWN_ARROW` or `J` - Move down in the currently selected list
+- `SPACE` - go into the directory currently under cursor
+- `BACKSPACE` - move out of the current directory
+- `M` - mark file currently under cursor for move
+- `D` - mark file currently under cursor for deletion
+- `C` - mark file currently under cursor for copying
+- `ENTER` - perform operations (move, delete, copy)
+- `ESC` - exit the application
+
 ## Notes
 
 - The project **currently supports only file transfer between AWS S3 and the local filesystem**, but due to the use of trait objects, adding the capability to transfer to/from other object stores etc. should only require writing an additional list component and provider. 
