@@ -1,4 +1,4 @@
-use std::{pin::Pin, sync::Arc};
+use std::pin::Pin;
 
 use super::{
     err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, SelectableContainer,
@@ -28,14 +28,14 @@ impl FileEntry for S3Object {
 }
 
 pub struct S3List {
-    client: Arc<S3Provider>,
+    client: S3Provider,
     s3_prefix: String,
     items: Vec<SelectableEntry<S3Object>>,
     state: ListState,
 }
 
 impl S3List {
-    pub fn new(client: Arc<S3Provider>) -> S3List {
+    pub fn new(client: S3Provider) -> S3List {
         S3List {
             client,
             s3_prefix: String::new(),
@@ -45,17 +45,16 @@ impl S3List {
     }
 
     fn add_prefix(&self, to: &str) -> String {
-        if self.s3_prefix.is_empty() {
-            to.to_owned()
-        } else {
-            format!("{}{}", self.s3_prefix, to)
-        }
+        format!("{}{}", self.s3_prefix, to)
     }
 
     fn handle_err(err: S3Error, file: Option<&str>) -> ComponentError {
         ComponentError::new(
             String::from("S3"),
-            format!("(File: {}) {}", file.unwrap_or(""), err.message()),
+            match file {
+                None => err.message().to_owned(),
+                Some(file_name) => format!("(File: {}) {}", file_name, err.message()),
+            },
             err.code().to_owned(),
         )
     }

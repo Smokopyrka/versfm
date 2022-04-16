@@ -1,8 +1,6 @@
-use std::{io, pin::Pin};
+use std::pin::Pin;
 
 use async_trait::async_trait;
-use bytes::Bytes;
-use tokio_stream::Stream;
 
 pub mod err;
 mod filesystem_list;
@@ -15,7 +13,7 @@ use tui::{
     widgets::{List, ListItem, ListState},
 };
 
-use crate::providers::Kind;
+use crate::providers::{BoxedByteStream, Kind};
 
 use self::err::ComponentError;
 
@@ -71,8 +69,6 @@ pub trait SelectableContainer<T> {
     fn select(&mut self, selection: State);
     fn get_selected(&self, selection: State) -> Vec<T>;
 }
-
-pub type BoxedByteStream = Box<dyn Stream<Item = Result<Bytes, io::Error>> + Send + 'static>;
 
 #[async_trait]
 pub trait FileCRUD {

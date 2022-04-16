@@ -52,7 +52,8 @@ impl S3Provider {
         match err {
             RusotoError::Unknown(buf) => {
                 let text = buf.body_as_str();
-                let s3err: S3Error = quick_xml::de::from_str(text).unwrap();
+                let s3err: S3Error =
+                    quick_xml::de::from_str(text).expect("Couldn't parse XML into S3Error struct");
                 s3err
             }
             RusotoError::HttpDispatch(err) => S3Error {
@@ -106,7 +107,7 @@ impl S3Provider {
         let result = response
             .into_iter()
             .filter(|i| {
-                let key = i.key.clone().unwrap();
+                let key = i.key.to_owned().unwrap();
                 let (prefix, file_name) = key.split_at(prefix.len());
                 // Ensures function returns only top-level files and directories
                 // for given prefix. (entries like foo/bar.txt are ommited)
@@ -124,7 +125,7 @@ impl S3Provider {
                 }
             })
             .map(|i| {
-                let key = i.key.clone().unwrap();
+                let key = i.key.to_owned().unwrap();
                 let (prefix, file_name) = key.split_at(prefix.len());
                 let kind: Kind;
                 if file_name.chars().last().unwrap() == '/' {
@@ -158,7 +159,7 @@ impl S3Provider {
 
     async fn get_object(&self, object_name: &str) -> Result<GetObjectOutput, S3Error> {
         let mut request = GetObjectRequest::default();
-        request.bucket = self.bucket_name.clone();
+        request.bucket = self.bucket_name.to_owned();
         request.key = object_name.to_owned();
 
         Ok(self

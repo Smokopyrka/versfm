@@ -9,15 +9,15 @@ use providers::s3::S3Provider;
 use std::{
     error::Error,
     io::{self, Stdout},
-    sync::{
-        mpsc::{self, Receiver},
-        Arc,
-    },
+    sync::mpsc::{self, Receiver},
     thread,
     time::{Duration, Instant},
 };
 use tui::{backend::CrosstermBackend, Terminal};
-use view::screens::MainScreen;
+use view::{
+    components::{FileList, FilesystemList, S3List},
+    screens::DualPaneList,
+};
 
 #[derive(Clone)]
 pub enum Kind {
@@ -32,7 +32,7 @@ enum Event<I> {
 }
 
 pub struct App {
-    main_screen: MainScreen,
+    main_screen: DualPaneList,
     input_channel: Receiver<Event<KeyEvent>>,
 }
 
@@ -49,12 +49,14 @@ impl App {
                     .checked_sub(last_tick.elapsed())
                     .unwrap_or_else(|| Duration::from_secs(0));
 
-                if event::poll(timeout).expect("timeout") {
-                    if let CEvent::Key(key) = event::read().expect("key") {
+                if event::poll(timeout).expect("Timeout occured while polling event") {
+                    if let CEvent::Key(key) = event::read().expect("Couldn't read key") {
                         if key.code == KeyCode::Esc {
-                            tx.send(Event::Shutdown).expect("Can send events");
+                            tx.send(Event::Shutdown)
+                                .expect("Couldn't send shutdown event");
                         } else {
-                            tx.send(Event::Input(key)).expect("Can send events");
+                            tx.send(Event::Input(key))
+                                .expect("Couldn't send user input event");
                         }
                     }
                 }
@@ -66,7 +68,6 @@ impl App {
                 }
             }
         });
-
         rx
     }
 
@@ -79,10 +80,13 @@ impl App {
         Ok(terminal)
     }
 
-    pub async fn new(client: Arc<S3Provider>) -> App {
+    pub async fn new(bucket_name: &str) -> App {
         let input_channel = App::spawn_sender();
-        let terminal = App::capture_terminal().unwrap();
-        let main_screen = MainScreen::new(terminal, client.clone()).await;
+        let terminal = App::capture_terminal().expect("Coudn't capture terminal");
+        let s3_client: Box<dyn FileList> =
+            Box::new(S3List::new(S3Provider::new(bucket_name).await));
+        let fs_client: Box<dyn FileList> = Box::new(FilesystemList::new());
+        let main_screen = DualPaneList::new(terminal, s3_client, fs_client).await;
         App {
             main_screen,
             input_channel,
@@ -97,7 +101,10 @@ impl App {
                     self.main_screen.shutdown()?;
                     break;
                 }
-                Event::Tick => self.main_screen.render().unwrap(),
+                Event::Tick => self
+                    .main_screen
+                    .render()
+                    .expect("Couldn't render DualPaneList screen"),
             }
         }
         Ok(())

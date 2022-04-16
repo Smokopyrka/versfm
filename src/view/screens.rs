@@ -1,3 +1,3 @@
-mod home;
+mod dual_pane_list;
 
-pub use home::MainScreen;
+pub use dual_pane_list::DualPaneList;

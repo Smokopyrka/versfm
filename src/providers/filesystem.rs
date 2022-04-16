@@ -4,13 +4,14 @@ use std::{
     fs::{self, File},
     io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
+    pin::Pin,
     task::Poll,
 };
 
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 
-use super::Kind;
+use super::{BoxedByteStream, Kind};
 
 #[derive(Clone)]
 pub struct FilesystemObject {
@@ -103,10 +104,10 @@ pub fn get_file_byte_stream(path: &Path) -> Result<FileBytesStream, io::Error> {
     Ok(FileBytesStream::new(file))
 }
 
-pub async fn write_file_from_stream<S>(path: &Path, stream: S) -> Result<(), io::Error>
-where
-    S: Stream<Item = Result<Bytes, io::Error>> + Send + 'static,
-{
+pub async fn write_file_from_stream(
+    path: &Path,
+    stream: Pin<BoxedByteStream>,
+) -> Result<(), io::Error> {
     let mut writer = BufWriter::new(File::create(path)?);
     let mut stream = Box::pin(stream);
     while let Some(chunk) = stream.next().await {

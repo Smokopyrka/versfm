@@ -58,32 +58,30 @@ impl FilesystemList {
         Ok(filesystem::get_files_list(path)
             .map_err(|e| Self::handle_error(e, Some(path.as_os_str().to_str().unwrap())))?
             .into_iter()
-            .map(|i| SelectableEntry::new(i))
+            .map(SelectableEntry::new)
             .collect())
     }
 
     fn handle_error(err: io::Error, file: Option<&str>) -> ComponentError {
-        let file = file.unwrap_or("");
         let message = match err.kind() {
-            io::ErrorKind::NotFound => format!("(File: {}) File couldn't be found", file),
+            io::ErrorKind::NotFound => "File couldn't be found",
             io::ErrorKind::PermissionDenied => {
-                format!(
-                    "(File {}): Insufficient file permissions to perform this operation on file",
-                    file
-                )
+                "Insufficient file permissions to perform this operation on file"
             }
-            io::ErrorKind::AlreadyExists => format!("(File: {}) File already exists", file),
-            io::ErrorKind::InvalidData => format!("(File: {}) File contains invalid data", file),
+            io::ErrorKind::AlreadyExists => "File already exists",
+            io::ErrorKind::InvalidData => "File contains invalid data",
             io::ErrorKind::WriteZero | io::ErrorKind::UnexpectedEof => {
-                String::from("Operation was not able to complete")
+                "Operation was not able to complete"
             }
-            io::ErrorKind::Unsupported => String::from("This operation is not supported"),
-            _ => String::from("Unexpected error occured"),
+            io::ErrorKind::Unsupported => "This operation is not supported",
+            _ => "Unexpected error occured",
         };
-
         ComponentError::new(
             String::from("Local Filesystem"),
-            message,
+            match file {
+                None => message.to_owned(),
+                Some(file_name) => format!("(File: {}) {}", file_name, message),
+            },
             format!("{:?}", err.kind()),
         )
     }
@@ -191,8 +189,7 @@ impl FileCRUD for FilesystemList {
     }
 
     async fn move_out_of_selected_dir(&mut self) -> Result<(), ComponentError> {
-        let current = self.curr_path.clone();
-        let current = current.as_path();
+        let current = self.curr_path.as_path().to_owned();
         match current.parent() {
             Some(path) => self.curr_path = path.to_path_buf(),
             None => (),
@@ -213,6 +210,7 @@ impl FileCRUD for FilesystemList {
             None => (),
             Some(i) => {
                 let selected = self.items[i].value.get_name();
+
                 let path;
                 if current.chars().last().unwrap() == '/' {
                     path = format!("{}{}", current, selected);
@@ -220,6 +218,7 @@ impl FileCRUD for FilesystemList {
                     path = format!("{}/{}", current, selected);
                 }
                 let path = Path::new(&path);
+
                 if fs::metadata(path).unwrap().is_dir() {
                     self.curr_path = path.to_path_buf();
                 }

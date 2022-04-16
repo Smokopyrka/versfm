@@ -3,7 +3,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, LeaveAlternateScreen},
 };
-use std::{error::Error, io::Stdout, sync::Arc};
+use std::{error::Error, io::Stdout};
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -11,10 +11,7 @@ use tui::{
     Terminal,
 };
 
-use crate::providers::s3::S3Provider;
-use crate::view::components::{
-    err::ComponentError, FileCRUD, FileList, FilesystemList, S3List, State,
-};
+use crate::view::components::{err::ComponentError, FileList, State};
 
 async fn move_from_to<'a>(
     from: &mut Box<dyn FileList>,
@@ -64,35 +61,34 @@ enum CurrentList {
     RightList,
 }
 
-pub struct MainScreen {
+pub struct DualPaneList {
     term: Terminal<CrosstermBackend<Stdout>>,
     curr_list: CurrentList,
-    s3_list: Box<dyn FileList>,
-    fs_list: Box<dyn FileList>,
+    left_pane: Box<dyn FileList>,
+    right_pane: Box<dyn FileList>,
     err_stack: Vec<ComponentError>,
 }
 
-impl MainScreen {
+impl DualPaneList {
     pub async fn new(
         term: Terminal<CrosstermBackend<Stdout>>,
-        client: Arc<S3Provider>,
-    ) -> MainScreen {
+        mut left_pane: Box<dyn FileList>,
+        mut right_pane: Box<dyn FileList>,
+    ) -> DualPaneList {
         let mut err_stack: Vec<ComponentError> = Vec::new();
-        let mut s3_list = Box::new(S3List::new(client));
-        s3_list
+        left_pane
             .refresh()
             .await
             .unwrap_or_else(|e| err_stack.push(e));
-        let mut fs_list = Box::new(FilesystemList::new());
-        fs_list
+        right_pane
             .refresh()
             .await
             .unwrap_or_else(|e| err_stack.push(e));
-        MainScreen {
+        DualPaneList {
             term,
             curr_list: CurrentList::LeftList,
-            s3_list,
-            fs_list,
+            left_pane,
+            right_pane,
             err_stack: err_stack,
         }
     }
@@ -136,47 +132,47 @@ impl MainScreen {
     }
 
     async fn refresh_lists(&mut self) {
-        self.s3_list
+        self.left_pane
             .refresh()
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
-        self.fs_list
+        self.right_pane
             .refresh()
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
     }
 
     async fn copy_items(&mut self) {
-        copy_from_to(&mut self.fs_list, &mut self.s3_list)
+        copy_from_to(&mut self.right_pane, &mut self.left_pane)
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
-        copy_from_to(&mut self.s3_list, &mut self.fs_list)
+        copy_from_to(&mut self.left_pane, &mut self.right_pane)
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
     }
 
     async fn delete_items(&mut self) {
-        delete_from(&mut self.s3_list)
+        delete_from(&mut self.left_pane)
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
-        delete_from(&mut self.fs_list)
+        delete_from(&mut self.right_pane)
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
     }
 
     async fn move_items(&mut self) {
-        move_from_to(&mut self.fs_list, &mut self.s3_list)
+        move_from_to(&mut self.right_pane, &mut self.left_pane)
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
-        move_from_to(&mut self.s3_list, &mut self.fs_list)
+        move_from_to(&mut self.left_pane, &mut self.right_pane)
             .await
             .unwrap_or_else(|e| self.err_stack.push(e));
     }
 
     fn get_curr_list(&mut self) -> &mut Box<dyn FileList> {
         match self.curr_list {
-            CurrentList::LeftList => &mut self.s3_list,
-            CurrentList::RightList => &mut self.fs_list,
+            CurrentList::LeftList => &mut self.left_pane,
+            CurrentList::RightList => &mut self.right_pane,
         }
     }
 
@@ -203,16 +199,16 @@ impl MainScreen {
 
             self.term.draw(|f| {
                 f.render_stateful_widget(
-                    self.s3_list
+                    self.left_pane
                         .make_file_list(matches!(self.curr_list, CurrentList::LeftList)),
                     chunks[0],
-                    &mut self.s3_list.get_current(),
+                    &mut self.left_pane.get_current(),
                 );
                 f.render_stateful_widget(
-                    self.fs_list
+                    self.right_pane
                         .make_file_list(matches!(self.curr_list, CurrentList::RightList)),
                     chunks[1],
-                    &mut self.fs_list.get_current(),
+                    &mut self.right_pane.get_current(),
                 );
             })?;
         } else {
