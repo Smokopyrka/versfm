@@ -39,7 +39,7 @@ pub struct App {
 impl App {
     fn spawn_sender() -> Receiver<Event<KeyEvent>> {
         let (tx, rx) = mpsc::channel();
-        let tick_rate = Duration::from_millis(50);
+        let tick_rate = Duration::from_millis(75);
 
         thread::spawn(move || {
             let mut last_tick = Instant::now();

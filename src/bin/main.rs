@@ -1,7 +1,7 @@
 use std::env;
 use std::error::Error;
 
-use s3tui::App;
+use versfm::App;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
