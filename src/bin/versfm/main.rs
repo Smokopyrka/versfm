@@ -91,6 +91,10 @@ pub async fn run(bucket_name: &str) -> Result<(), Box<dyn Error>> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
-    let result = run(&args[1]).await;
-    result
+    match &args.get(1) {
+        Some(v) => run(v).await,
+        None => Ok(println!(
+            "ERROR: Please provide the name of the bucket you want to access"
+        )),
+    }
 }
