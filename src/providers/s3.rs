@@ -37,7 +37,7 @@ pub struct S3Object {
     pub prefix: String,
     pub kind: Kind,
     pub size: Option<i64>,
-    pub last_mod: DateTime<Utc>,
+    pub last_mod: Option<DateTime<Utc>>,
     pub storage_class: Option<String>,
     pub owner: Option<String>,
 }
@@ -92,12 +92,14 @@ impl S3Provider {
     }
 
     pub async fn list_objects(&self, prefix: &str) -> Result<Vec<S3Object>, S3Error> {
+        let mut prefix = prefix.to_owned();
         let mut request = ListObjectsV2Request::default();
         request.bucket = self.bucket_name.clone();
         request.prefix = if prefix.is_empty() {
             None
         } else {
-            Some(prefix.to_owned())
+            prefix.push_str("/");
+            Some(prefix.clone())
         };
         let objects = self.s3_client.list_objects_v2(request);
         let response = match objects.await.map_err(Self::handle_error)?.contents {
@@ -138,9 +140,11 @@ impl S3Provider {
                     prefix: prefix.to_owned(),
                     kind,
                     size: i.size,
-                    last_mod: DateTime::parse_from_rfc3339(i.last_modified.unwrap().as_str())
-                        .expect("Couldn't parse object's last modification date from string")
-                        .with_timezone(&Utc),
+                    last_mod: Some(
+                        DateTime::parse_from_rfc3339(i.last_modified.unwrap().as_str())
+                            .expect("Couldn't parse object's last modification date from string")
+                            .with_timezone(&Utc),
+                    ),
                     storage_class: i.storage_class,
                     owner: match i.owner {
                         Some(own) => own.display_name,

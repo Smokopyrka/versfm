@@ -18,36 +18,6 @@ use tui::{
 
 use crate::view::components::{err::ComponentError, FileList, State};
 
-async fn move_from_to<'a>(
-    from: &Box<dyn FileList>,
-    to: &Box<dyn FileList>,
-) -> Result<(), ComponentError> {
-    for selected in from.get_selected(State::ToMove) {
-        to.put_file(&selected, from.get_file_stream(&selected).await?)
-            .await?;
-        from.delete_file(&selected).await?;
-    }
-    Ok(())
-}
-
-async fn copy_from_to(
-    from: &Box<dyn FileList>,
-    to: &Box<dyn FileList>,
-) -> Result<(), ComponentError> {
-    for selected in from.get_selected(State::ToCopy) {
-        to.put_file(&selected, from.get_file_stream(&selected).await?)
-            .await?;
-    }
-    Ok(())
-}
-
-async fn delete_from(from: &Box<dyn FileList>) -> Result<(), ComponentError> {
-    for selected in from.get_selected(State::ToDelete) {
-        from.delete_file(&selected).await?;
-    }
-    Ok(())
-}
-
 fn get_err_list<'err_stack_lif>(
     errs: Arc<Mutex<Vec<ComponentError>>>,
 ) -> Vec<ListItem<'err_stack_lif>> {
@@ -73,16 +43,16 @@ enum CurrentList {
 pub struct DualPaneList {
     term: Terminal<CrosstermBackend<Stdout>>,
     curr_list: CurrentList,
-    left_pane: Box<dyn FileList>,
-    right_pane: Box<dyn FileList>,
+    left_pane: Arc<Box<dyn FileList + Sync + Send>>,
+    right_pane: Arc<Box<dyn FileList + Sync + Send>>,
     err_stack: Arc<Mutex<Vec<ComponentError>>>,
 }
 
 impl DualPaneList {
     pub async fn new(
         term: Terminal<CrosstermBackend<Stdout>>,
-        left_pane: Box<dyn FileList>,
-        right_pane: Box<dyn FileList>,
+        left_pane: Box<dyn FileList + Sync + Send>,
+        right_pane: Box<dyn FileList + Sync + Send>,
     ) -> DualPaneList {
         let mut err_stack: Vec<ComponentError> = Vec::new();
         left_pane
@@ -96,8 +66,8 @@ impl DualPaneList {
         DualPaneList {
             term,
             curr_list: CurrentList::LeftList,
-            left_pane,
-            right_pane,
+            left_pane: Arc::new(left_pane),
+            right_pane: Arc::new(right_pane),
             err_stack: Arc::new(Mutex::new(err_stack)),
         }
     }
@@ -127,7 +97,6 @@ impl DualPaneList {
                     let copy_ft = self.copy_items();
                     let delete_ft = self.delete_items();
                     join!(move_ft, copy_ft, delete_ft);
-                    self.refresh_lists().await;
                 } else {
                     self.err_stack_clear();
                 }
@@ -168,36 +137,108 @@ impl DualPaneList {
     }
 
     async fn copy_items(&self) {
-        copy_from_to(&self.right_pane, &self.left_pane)
+        self.copy_from_to(self.right_pane.clone(), self.left_pane.clone())
             .await
             .unwrap_or_else(|e| self.handle_err(e));
-        copy_from_to(&self.left_pane, &self.right_pane)
+        self.copy_from_to(self.left_pane.clone(), self.right_pane.clone())
             .await
             .unwrap_or_else(|e| self.handle_err(e));
+    }
+
+    async fn copy_from_to(
+        &self,
+        from: Arc<Box<dyn FileList + Sync + Send>>,
+        to: Arc<Box<dyn FileList + Sync + Send>>,
+    ) -> Result<(), ComponentError> {
+        let from_prefix = from.get_current_path();
+        let to_prefix = to.get_current_path();
+        for selected in from.get_selected(State::ToCopy) {
+            let err_stack = self.err_stack.clone();
+            let from = from.clone();
+            let to = to.clone();
+            let from_path = format!("{}/{}", from_prefix, selected);
+            let to_path = format!("{}/{}", to_prefix, selected);
+            tokio::spawn(async move {
+                match from.get_file_stream(&from_path).await {
+                    Err(e) => err_stack.lock().expect("Couldn't lock mutex").push(e),
+                    Ok(file) => to
+                        .put_file(&to_path, file)
+                        .await
+                        .unwrap_or_else(|e| err_stack.lock().expect("Couldn't lock mutex").push(e)),
+                }
+            });
+        }
+        Ok(())
     }
 
     async fn delete_items(&self) {
-        delete_from(&self.left_pane)
+        self.delete_from(self.left_pane.clone())
             .await
             .unwrap_or_else(|e| self.handle_err(e));
-        delete_from(&self.right_pane)
+        self.delete_from(self.right_pane.clone())
             .await
             .unwrap_or_else(|e| self.handle_err(e));
+    }
+
+    async fn delete_from(
+        &self,
+        from: Arc<Box<dyn FileList + Sync + Send>>,
+    ) -> Result<(), ComponentError> {
+        let from_prefix = from.get_current_path();
+        for selected in from.get_selected(State::ToDelete) {
+            let err_stack = self.err_stack.clone();
+            let from = from.clone();
+            let from_path = format!("{}/{}", from_prefix, selected);
+            tokio::spawn(async move {
+                from.delete_file(&from_path)
+                    .await
+                    .unwrap_or_else(|e| err_stack.lock().expect("Couldn't lock mutex").push(e));
+            });
+        }
+        Ok(())
     }
 
     async fn move_items(&self) {
-        move_from_to(&self.right_pane, &self.left_pane)
-            .await
-            .unwrap_or_else(|e| self.handle_err(e));
-        move_from_to(&self.left_pane, &self.right_pane)
-            .await
-            .unwrap_or_else(|e| self.handle_err(e));
+        self.move_from_to(self.right_pane.clone(), self.left_pane.clone())
+            .await;
+        self.move_from_to(self.left_pane.clone(), self.right_pane.clone())
+            .await;
     }
 
-    fn get_curr_list(&mut self) -> &mut Box<dyn FileList> {
+    async fn move_from_to(
+        &self,
+        from: Arc<Box<dyn FileList + Sync + Send>>,
+        to: Arc<Box<dyn FileList + Sync + Send>>,
+    ) {
+        let from_prefix = from.get_current_path();
+        let to_prefix = to.get_current_path();
+        for selected in from.get_selected(State::ToMove) {
+            let err_stack = self.err_stack.clone();
+            let from = from.clone();
+            let to = to.clone();
+            let from_path = format!("{}/{}", from_prefix, selected);
+            let to_path = format!("{}/{}", to_prefix, selected);
+
+            tokio::spawn(async move {
+                match from.get_file_stream(&from_path).await {
+                    Ok(file) => {
+                        to.put_file(&to_path, file)
+                            .await
+                            .unwrap_or_else(|e| err_stack.lock().unwrap().push(e));
+                        from.delete_file(&from_path)
+                            .await
+                            .unwrap_or_else(|e| err_stack.lock().unwrap().push(e));
+                    }
+                    Err(e) => err_stack.lock().unwrap().push(e),
+                }
+            });
+        }
+    }
+
+    fn get_curr_list(&mut self) -> Arc<Box<dyn FileList + Sync + Send>> {
         match self.curr_list {
-            CurrentList::LeftList => &mut self.left_pane,
-            CurrentList::RightList => &mut self.right_pane,
+            CurrentList::LeftList => self.left_pane.clone(),
+            CurrentList::RightList => self.right_pane.clone(),
         }
     }
 

@@ -4,8 +4,8 @@ use std::{
 };
 
 use super::{
-    err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, SelectableContainer,
-    SelectableEntry, State, StatefulContainer, TuiListDisplay,
+    err::ComponentError, get_filename_from_path, BoxedByteStream, FileCRUD, FileEntry,
+    SelectableContainer, SelectableEntry, State, StatefulContainer, TuiListDisplay,
 };
 use crate::providers::{
     s3::{S3Error, S3Object, S3Provider},
@@ -32,9 +32,9 @@ impl FileEntry for S3Object {
 
 pub struct S3List {
     client: S3Provider,
-    s3_prefix: String,
+    s3_prefix: Mutex<String>,
     items: Arc<Mutex<Vec<SelectableEntry<S3Object>>>>,
-    state: ListState,
+    state: Arc<Mutex<ListState>>,
 }
 
 impl S3List {
@@ -58,14 +58,53 @@ impl S3List {
     pub fn new(client: S3Provider) -> S3List {
         S3List {
             client,
-            s3_prefix: String::new(),
+            s3_prefix: Mutex::new(String::new()),
             items: Arc::new(Mutex::new(Vec::new())),
-            state: ListState::default(),
+            state: Arc::new(Mutex::new(ListState::default())),
         }
     }
 
+    fn remove_element_of_filename(&self, file_name: &str) {
+        let mut elements = self.items.lock().expect("Couldn't lock mutex");
+        let mut state = self.state.lock().expect("Couldn't lock mutex");
+        if let Some((element_index, _)) = elements
+            .iter()
+            .enumerate()
+            .find(|(_, v)| v.value().get_name() == file_name)
+        {
+            elements.remove(element_index);
+            if let Some(selected) = state.selected() {
+                if element_index < selected {
+                    state.select(Some(selected - 1));
+                } else if element_index == selected {
+                    state.select(None);
+                }
+            }
+        }
+    }
+
+    fn add_new_element(&self, file_name: &str) {
+        let mut elements = self.items.lock().expect("Couldn't lock mutex");
+        elements.push(SelectableEntry::new(S3Object {
+            name: file_name.to_owned(),
+            kind: Kind::File,
+            prefix: String::from(""),
+            last_mod: None,
+            size: None,
+            storage_class: None,
+            owner: None,
+        }));
+    }
+
+    fn get_prefix(&self) -> String {
+        self.s3_prefix
+            .lock()
+            .expect("Couldn't lock mutex")
+            .to_owned()
+    }
+
     fn add_prefix(&self, to: &str) -> String {
-        format!("{}{}", self.s3_prefix, to)
+        format!("{}{}", &self.get_prefix(), to)
     }
 
     fn handle_err(err: S3Error, file: Option<&str>) -> ComponentError {
@@ -82,12 +121,12 @@ impl S3List {
 
 impl StatefulContainer for S3List {
     fn get_current(&self) -> ListState {
-        self.state.clone()
+        self.state.lock().expect("Couldn't lock mutex").clone()
     }
 
-    fn next(&mut self) {
+    fn next(&self) {
         if self.len() > 0 {
-            let i = match self.state.selected() {
+            let i = match self.get_current().selected() {
                 Some(i) => {
                     if i >= self.len() - 1 {
                         0
@@ -98,13 +137,16 @@ impl StatefulContainer for S3List {
                 None => 0,
             };
 
-            self.state.select(Some(i));
+            self.state
+                .lock()
+                .expect("Couldn't lock mutex")
+                .select(Some(i));
         }
     }
 
-    fn previous(&mut self) {
+    fn previous(&self) {
         if self.len() > 0 {
-            let i = match self.state.selected() {
+            let i = match self.get_current().selected() {
                 Some(i) => {
                     if i == 0 {
                         self.len() - 1
@@ -115,20 +157,25 @@ impl StatefulContainer for S3List {
                 None => 0,
             };
 
-            self.state.select(Some(i));
+            self.state
+                .lock()
+                .expect("Couldn't lock mutex")
+                .select(Some(i));
         }
     }
 }
 
 impl SelectableContainer<String> for S3List {
-    fn select(&mut self, selection: State) {
-        match self.state.selected() {
+    fn select(&self, selection: State) {
+        match self.get_current().selected() {
             None => (),
             Some(i) => {
                 let mut items = self.items.lock().expect("Couldn't lock mutex");
-                match items[i].value().get_kind() {
-                    Kind::File => items[i].select(selection),
-                    Kind::Directory => (),
+                if items.len() > i && i > 0 {
+                    match items[i].value().get_kind() {
+                        Kind::File => items[i].select(selection),
+                        Kind::Directory => (),
+                    }
                 }
             }
         };
@@ -147,21 +194,18 @@ impl SelectableContainer<String> for S3List {
 
 #[async_trait]
 impl FileCRUD for S3List {
-    async fn get_file_stream(
-        &self,
-        file_name: &str,
-    ) -> Result<Pin<BoxedByteStream>, ComponentError> {
+    async fn get_file_stream(&self, path: &str) -> Result<Pin<BoxedByteStream>, ComponentError> {
         Ok(Box::pin(
             self.client
-                .download_object(&self.add_prefix(file_name))
+                .download_object(&path)
                 .await
-                .map_err(|e| Self::handle_err(e, Some(file_name)))?,
+                .map_err(|e| Self::handle_err(e, Some(path)))?,
         ))
     }
 
     async fn put_file(
         &self,
-        file_name: &str,
+        path: &str,
         stream: Pin<BoxedByteStream>,
     ) -> Result<(), ComponentError> {
         let size = stream.size_hint();
@@ -170,38 +214,50 @@ impl FileCRUD for S3List {
         }
         let content = ByteStream::new_with_size(stream, size.0);
         self.client
-            .put_object(&self.add_prefix(file_name), content)
+            .put_object(&path, content)
             .await
-            .map_err(|e| Self::handle_err(e, Some(file_name)))?;
+            .map_err(|e| Self::handle_err(e, Some(path)))?;
+        let path_dir = path.rsplitn(2, "/").last().unwrap();
+        let mut curr_dir = self.get_current_path();
+        if curr_dir == path_dir {
+            self.add_new_element(get_filename_from_path(path));
+        }
         Ok(())
     }
 
-    async fn delete_file(&self, file_name: &str) -> Result<(), ComponentError> {
+    async fn delete_file(&self, path: &str) -> Result<(), ComponentError> {
         self.client
-            .delete_object(&self.add_prefix(file_name))
+            .delete_object(&path)
             .await
-            .map_err(|e| Self::handle_err(e, Some(file_name)))?;
+            .map_err(|e| Self::handle_err(e, Some(path)))?;
+        self.remove_element_of_filename(get_filename_from_path(path));
         Ok(())
     }
 
     async fn refresh(&self) -> Result<(), ComponentError> {
+        let mut path = self.get_prefix();
+        // path.push_str("/");
         let files: Vec<S3Object> = self
             .client
-            .list_objects(&self.s3_prefix)
+            .list_objects(&path)
             .await
-            .map_err(|e| Self::handle_err(e, Some(&self.s3_prefix)))?;
+            .map_err(|e| Self::handle_err(e, Some(&self.get_prefix())))?;
         let mut items = self.items.lock().expect("Could not lock mutex");
         *items = files.into_iter().map(|i| SelectableEntry::new(i)).collect();
         Ok(())
     }
 
-    async fn move_into_selected_dir(&mut self) -> Result<(), ComponentError> {
-        match self.state.selected() {
+    async fn move_into_selected_dir(&self) -> Result<(), ComponentError> {
+        match self.get_current().selected() {
             None => (),
             Some(i) => {
-                let selected = self.get_entry_name(i);
+                let mut selected = self.get_entry_name(i);
                 if selected.chars().last().unwrap() == '/' {
-                    self.s3_prefix.push_str(&selected);
+                    selected.pop();
+                    self.s3_prefix
+                        .lock()
+                        .expect("Couldn't lock mutex")
+                        .push_str(&selected);
                 }
             }
         };
@@ -211,33 +267,36 @@ impl FileCRUD for S3List {
                 Err(err)
             }
             Ok(_) => {
-                self.state.select(None);
+                self.state.lock().expect("Couldn't lock mutex").select(None);
                 Ok(())
             }
         }
     }
 
-    async fn move_out_of_selected_dir(&mut self) -> Result<(), ComponentError> {
-        let current = self.s3_prefix.to_owned();
+    async fn move_out_of_selected_dir(&self) -> Result<(), ComponentError> {
+        let current = self.get_prefix();
         if !current.is_empty() {
-            self.s3_prefix = current
+            let mut s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
+            *s3_prefix = current
                 .rmatch_indices('/')
                 .nth(1)
                 .map(|(i, _)| current[..(i + 1)].to_owned())
                 .unwrap_or(String::from(""));
         };
-        match self.refresh().await {
-            Err(err) => {
-                self.s3_prefix = current;
-                self.move_into_selected_dir().await?;
-                Err(err)
-            }
-            Ok(_) => Ok(()),
-        }
+        Ok(())
+        // match self.refresh().await {
+        //     Err(err) => {
+        //         let s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
+        //         *s3_prefix = current;
+        //         self.move_into_selected_dir().await?;
+        //         Err(err)
+        //     }
+        //     Ok(_) => Ok(()),
+        // }
     }
 
-    fn get_current_path(&self) -> &str {
-        &self.s3_prefix
+    fn get_current_path(&self) -> String {
+        self.get_prefix()
     }
 
     fn get_resource_name(&self) -> &str {

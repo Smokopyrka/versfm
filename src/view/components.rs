@@ -63,13 +63,13 @@ pub trait FileEntry {
 }
 
 pub trait StatefulContainer {
-    fn previous(&mut self);
-    fn next(&mut self);
+    fn previous(&self);
+    fn next(&self);
     fn get_current(&self) -> ListState;
 }
 
 pub trait SelectableContainer<T> {
-    fn select(&mut self, selection: State);
+    fn select(&self, selection: State);
     fn get_selected(&self, selection: State) -> Vec<T>;
 }
 
@@ -86,9 +86,9 @@ pub trait FileCRUD {
         stream: Pin<BoxedByteStream>,
     ) -> Result<(), ComponentError>;
     async fn delete_file(&self, file_name: &str) -> Result<(), ComponentError>;
-    async fn move_into_selected_dir(&mut self) -> Result<(), ComponentError>;
-    async fn move_out_of_selected_dir(&mut self) -> Result<(), ComponentError>;
-    fn get_current_path(&self) -> &str;
+    async fn move_into_selected_dir(&self) -> Result<(), ComponentError>;
+    async fn move_out_of_selected_dir(&self) -> Result<(), ComponentError>;
+    fn get_current_path(&self) -> String;
     fn get_resource_name(&self) -> &str;
 }
 
@@ -133,6 +133,9 @@ where
         .collect()
 }
 
+fn get_filename_from_path(path: &str) -> &str {
+    path.rsplit("/").next().unwrap()
+}
 pub trait FileList:
     StatefulContainer + SelectableContainer<String> + FileCRUD + TuiListDisplay
 {
