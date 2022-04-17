@@ -2,6 +2,7 @@ use std::{
     env, fs, io,
     path::{Path, PathBuf},
     pin::Pin,
+    sync::{Arc, Mutex},
 };
 
 use async_trait::async_trait;
@@ -33,7 +34,7 @@ impl FileEntry for FilesystemObject {
 pub struct FilesystemList {
     user: String,
     curr_path: PathBuf,
-    items: Vec<SelectableEntry<FilesystemObject>>,
+    items: Arc<Mutex<Vec<SelectableEntry<FilesystemObject>>>>,
     state: ListState,
 }
 
@@ -43,9 +44,24 @@ impl FilesystemList {
         FilesystemList {
             user: whoami::username(),
             curr_path,
-            items: Vec::new(),
+            items: Arc::new(Mutex::new(Vec::new())),
             state: ListState::default(),
         }
+    }
+
+    fn len(&self) -> usize {
+        self.items.lock().expect("Couldn't lock mutex").len()
+    }
+
+    fn get_entry_name(&self, i: usize) -> String {
+        self.items
+            .lock()
+            .expect("Coldn't lock mutex")
+            .get(i)
+            .expect("FilesystemList index out of range")
+            .value()
+            .get_name()
+            .to_owned()
     }
 
     fn add_prefix(&self, to: &str) -> String {
@@ -93,10 +109,10 @@ impl StatefulContainer for FilesystemList {
     }
 
     fn next(&mut self) {
-        if self.items.len() > 0 {
+        if self.len() > 0 {
             let i = match self.state.selected() {
                 Some(i) => {
-                    if i >= self.items.len() - 1 {
+                    if i >= self.len() - 1 {
                         0
                     } else {
                         i + 1
@@ -110,11 +126,11 @@ impl StatefulContainer for FilesystemList {
     }
 
     fn previous(&mut self) {
-        if self.items.len() > 0 {
+        if self.len() > 0 {
             let i = match self.state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        self.items.len() - 1
+                        self.len() - 1
                     } else {
                         i - 1
                     }
@@ -132,9 +148,9 @@ impl SelectableContainer<String> for FilesystemList {
         match self.state.selected() {
             None => (),
             Some(i) => {
-                let obj = &mut self.items[i];
-                match obj.value().kind {
-                    Kind::File => obj.select(selection),
+                let mut items = self.items.lock().expect("Couldn't lock mutex");
+                match items[i].value().get_kind() {
+                    Kind::File => items[i].select(selection),
                     Kind::Directory => (),
                 }
             }
@@ -143,6 +159,8 @@ impl SelectableContainer<String> for FilesystemList {
 
     fn get_selected(&self, selection: State) -> Vec<String> {
         self.items
+            .lock()
+            .expect("Coldn't lock mutex")
             .iter()
             .filter(|i| *i.selected() == selection)
             .map(|i| i.value().get_name().to_owned())
@@ -153,7 +171,7 @@ impl SelectableContainer<String> for FilesystemList {
 #[async_trait]
 impl FileCRUD for FilesystemList {
     async fn get_file_stream(
-        &mut self,
+        &self,
         file_name: &str,
     ) -> Result<Pin<BoxedByteStream>, ComponentError> {
         Ok(Box::pin(
@@ -163,7 +181,7 @@ impl FileCRUD for FilesystemList {
     }
 
     async fn put_file(
-        &mut self,
+        &self,
         file_name: &str,
         stream: Pin<BoxedByteStream>,
     ) -> Result<(), ComponentError> {
@@ -173,19 +191,16 @@ impl FileCRUD for FilesystemList {
         Ok(())
     }
 
-    async fn delete_file(&mut self, file_name: &str) -> Result<(), ComponentError> {
+    async fn delete_file(&self, file_name: &str) -> Result<(), ComponentError> {
         filesystem::remove_file(Path::new(&self.add_prefix(file_name)))
             .map_err(|e| Self::handle_error(e, Some(file_name)))?;
         Ok(())
     }
 
-    async fn refresh(&mut self) -> Result<(), ComponentError> {
-        self.items = Self::get_list_entries(&self.curr_path)?;
+    async fn refresh(&self) -> Result<(), ComponentError> {
+        let mut items = self.items.lock().expect("Couldn't lock mutex");
+        *items = Self::get_list_entries(&self.curr_path)?;
         Ok(())
-    }
-
-    fn get_filenames(&self) -> Result<Vec<&str>, ComponentError> {
-        Ok(self.items.iter().map(|i| i.value().name.as_str()).collect())
     }
 
     async fn move_out_of_selected_dir(&mut self) -> Result<(), ComponentError> {
@@ -209,7 +224,7 @@ impl FileCRUD for FilesystemList {
         match self.state.selected() {
             None => (),
             Some(i) => {
-                let selected = self.items[i].value.get_name();
+                let selected = self.get_entry_name(i);
 
                 let path;
                 if current.chars().last().unwrap() == '/' {
@@ -259,7 +274,7 @@ impl TuiListDisplay for FilesystemList {
             ))
             .style(style)
             .borders(Borders::ALL);
-        let items = super::transform_list(&self.items);
+        let items = super::transform_list(self.items.clone());
         List::new(items)
             .block(block)
             .style(Style::default().fg(Color::White))

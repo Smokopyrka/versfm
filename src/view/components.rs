@@ -1,4 +1,7 @@
-use std::pin::Pin;
+use std::{
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
 use async_trait::async_trait;
 
@@ -72,18 +75,17 @@ pub trait SelectableContainer<T> {
 
 #[async_trait]
 pub trait FileCRUD {
-    async fn refresh(&mut self) -> Result<(), ComponentError>;
+    async fn refresh(&self) -> Result<(), ComponentError>;
     async fn get_file_stream(
-        &mut self,
+        &self,
         file_name: &str,
     ) -> Result<Pin<BoxedByteStream>, ComponentError>;
     async fn put_file(
-        &mut self,
+        &self,
         file_name: &str,
         stream: Pin<BoxedByteStream>,
     ) -> Result<(), ComponentError>;
-    async fn delete_file(&mut self, file_name: &str) -> Result<(), ComponentError>;
-    fn get_filenames(&self) -> Result<Vec<&str>, ComponentError>;
+    async fn delete_file(&self, file_name: &str) -> Result<(), ComponentError>;
     async fn move_into_selected_dir(&mut self) -> Result<(), ComponentError>;
     async fn move_out_of_selected_dir(&mut self) -> Result<(), ComponentError>;
     fn get_current_path(&self) -> &str;
@@ -94,11 +96,15 @@ pub trait TuiListDisplay {
     fn make_file_list(&self, is_focused: bool) -> List;
 }
 
-fn transform_list<T>(options: &[SelectableEntry<T>]) -> Vec<ListItem>
+fn transform_list<'entry_life, T>(
+    options: Arc<Mutex<Vec<SelectableEntry<T>>>>,
+) -> Vec<ListItem<'entry_life>>
 where
     T: FileEntry,
 {
     options
+        .lock()
+        .expect("Couldn't lock mutex")
         .iter()
         .map(|o| {
             let mut text = o.value().get_name().to_owned();

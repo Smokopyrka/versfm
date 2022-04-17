@@ -3,7 +3,12 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, LeaveAlternateScreen},
 };
-use std::{error::Error, io::Stdout};
+use std::{
+    error::Error,
+    io::Stdout,
+    sync::{Arc, Mutex},
+};
+use tokio::join;
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -14,8 +19,8 @@ use tui::{
 use crate::view::components::{err::ComponentError, FileList, State};
 
 async fn move_from_to<'a>(
-    from: &mut Box<dyn FileList>,
-    to: &mut Box<dyn FileList>,
+    from: &Box<dyn FileList>,
+    to: &Box<dyn FileList>,
 ) -> Result<(), ComponentError> {
     for selected in from.get_selected(State::ToMove) {
         to.put_file(&selected, from.get_file_stream(&selected).await?)
@@ -26,8 +31,8 @@ async fn move_from_to<'a>(
 }
 
 async fn copy_from_to(
-    from: &mut Box<dyn FileList>,
-    to: &mut Box<dyn FileList>,
+    from: &Box<dyn FileList>,
+    to: &Box<dyn FileList>,
 ) -> Result<(), ComponentError> {
     for selected in from.get_selected(State::ToCopy) {
         to.put_file(&selected, from.get_file_stream(&selected).await?)
@@ -36,15 +41,19 @@ async fn copy_from_to(
     Ok(())
 }
 
-async fn delete_from(from: &mut Box<dyn FileList>) -> Result<(), ComponentError> {
+async fn delete_from(from: &Box<dyn FileList>) -> Result<(), ComponentError> {
     for selected in from.get_selected(State::ToDelete) {
         from.delete_file(&selected).await?;
     }
     Ok(())
 }
 
-fn get_err_list(errs: &Vec<ComponentError>) -> Vec<ListItem> {
-    errs.iter()
+fn get_err_list<'err_stack_lif>(
+    errs: Arc<Mutex<Vec<ComponentError>>>,
+) -> Vec<ListItem<'err_stack_lif>> {
+    errs.lock()
+        .expect("Couldn't lock mutex")
+        .iter()
         .map(|e| {
             ListItem::new(format!(
                 "{} Err: {} - {}",
@@ -66,14 +75,14 @@ pub struct DualPaneList {
     curr_list: CurrentList,
     left_pane: Box<dyn FileList>,
     right_pane: Box<dyn FileList>,
-    err_stack: Vec<ComponentError>,
+    err_stack: Arc<Mutex<Vec<ComponentError>>>,
 }
 
 impl DualPaneList {
     pub async fn new(
         term: Terminal<CrosstermBackend<Stdout>>,
-        mut left_pane: Box<dyn FileList>,
-        mut right_pane: Box<dyn FileList>,
+        left_pane: Box<dyn FileList>,
+        right_pane: Box<dyn FileList>,
     ) -> DualPaneList {
         let mut err_stack: Vec<ComponentError> = Vec::new();
         left_pane
@@ -89,8 +98,23 @@ impl DualPaneList {
             curr_list: CurrentList::LeftList,
             left_pane,
             right_pane,
-            err_stack: err_stack,
+            err_stack: Arc::new(Mutex::new(err_stack)),
         }
+    }
+
+    fn handle_err(&self, e: ComponentError) {
+        self.err_stack.lock().expect("Couldn't lock mutex").push(e);
+    }
+
+    fn err_stack_empty(&self) -> bool {
+        self.err_stack
+            .lock()
+            .expect("Couldn't lock mutex")
+            .is_empty()
+    }
+
+    fn err_stack_clear(&self) {
+        self.err_stack.lock().expect("Couldn't lock mutex").clear()
     }
 
     pub async fn handle_event(&mut self, event: KeyEvent) {
@@ -98,26 +122,27 @@ impl DualPaneList {
 
         match event.code {
             KeyCode::Enter => {
-                if self.err_stack.is_empty() {
-                    self.move_items().await;
-                    self.copy_items().await;
-                    self.delete_items().await;
+                if self.err_stack_empty() {
+                    let move_ft = self.move_items();
+                    let copy_ft = self.copy_items();
+                    let delete_ft = self.delete_items();
+                    join!(move_ft, copy_ft, delete_ft);
                     self.refresh_lists().await;
                 } else {
-                    self.err_stack.clear();
+                    self.err_stack_clear();
                 }
             }
             KeyCode::Char(' ') => {
                 curr_list
                     .move_into_selected_dir()
                     .await
-                    .unwrap_or_else(|e| self.err_stack.push(e));
+                    .unwrap_or_else(|e| self.handle_err(e));
             }
             KeyCode::Backspace => {
                 curr_list
                     .move_out_of_selected_dir()
                     .await
-                    .unwrap_or_else(|e| self.err_stack.push(e));
+                    .unwrap_or_else(|e| self.handle_err(e));
             }
             KeyCode::Down | KeyCode::Char('j') => curr_list.next(),
             KeyCode::Up | KeyCode::Char('k') => curr_list.previous(),
@@ -135,38 +160,38 @@ impl DualPaneList {
         self.left_pane
             .refresh()
             .await
-            .unwrap_or_else(|e| self.err_stack.push(e));
+            .unwrap_or_else(|e| self.handle_err(e));
         self.right_pane
             .refresh()
             .await
-            .unwrap_or_else(|e| self.err_stack.push(e));
+            .unwrap_or_else(|e| self.handle_err(e));
     }
 
-    async fn copy_items(&mut self) {
-        copy_from_to(&mut self.right_pane, &mut self.left_pane)
+    async fn copy_items(&self) {
+        copy_from_to(&self.right_pane, &self.left_pane)
             .await
-            .unwrap_or_else(|e| self.err_stack.push(e));
-        copy_from_to(&mut self.left_pane, &mut self.right_pane)
+            .unwrap_or_else(|e| self.handle_err(e));
+        copy_from_to(&self.left_pane, &self.right_pane)
             .await
-            .unwrap_or_else(|e| self.err_stack.push(e));
+            .unwrap_or_else(|e| self.handle_err(e));
     }
 
-    async fn delete_items(&mut self) {
-        delete_from(&mut self.left_pane)
+    async fn delete_items(&self) {
+        delete_from(&self.left_pane)
             .await
-            .unwrap_or_else(|e| self.err_stack.push(e));
-        delete_from(&mut self.right_pane)
+            .unwrap_or_else(|e| self.handle_err(e));
+        delete_from(&self.right_pane)
             .await
-            .unwrap_or_else(|e| self.err_stack.push(e));
+            .unwrap_or_else(|e| self.handle_err(e));
     }
 
-    async fn move_items(&mut self) {
-        move_from_to(&mut self.right_pane, &mut self.left_pane)
+    async fn move_items(&self) {
+        move_from_to(&self.right_pane, &self.left_pane)
             .await
-            .unwrap_or_else(|e| self.err_stack.push(e));
-        move_from_to(&mut self.left_pane, &mut self.right_pane)
+            .unwrap_or_else(|e| self.handle_err(e));
+        move_from_to(&self.left_pane, &self.right_pane)
             .await
-            .unwrap_or_else(|e| self.err_stack.push(e));
+            .unwrap_or_else(|e| self.handle_err(e));
     }
 
     fn get_curr_list(&mut self) -> &mut Box<dyn FileList> {
@@ -190,7 +215,7 @@ impl DualPaneList {
 
     pub fn render(&mut self) -> Result<(), Box<dyn Error>> {
         let term_size = self.term.size().unwrap();
-        if self.err_stack.is_empty() {
+        if self.err_stack_empty() {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .margin(1)
@@ -218,7 +243,7 @@ impl DualPaneList {
                 .constraints([Constraint::Percentage(100)])
                 .split(term_size);
 
-            let mut err_list = get_err_list(&self.err_stack);
+            let mut err_list = get_err_list(self.err_stack.clone());
             err_list.push(ListItem::new("Press ENTER to continue"));
             let err_list = List::new(err_list);
             self.term.draw(|f| {

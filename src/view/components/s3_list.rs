@@ -1,4 +1,7 @@
-use std::pin::Pin;
+use std::{
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
 use super::{
     err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, SelectableContainer,
@@ -30,8 +33,25 @@ impl FileEntry for S3Object {
 pub struct S3List {
     client: S3Provider,
     s3_prefix: String,
-    items: Vec<SelectableEntry<S3Object>>,
+    items: Arc<Mutex<Vec<SelectableEntry<S3Object>>>>,
     state: ListState,
+}
+
+impl S3List {
+    fn len(&self) -> usize {
+        self.items.lock().unwrap().len()
+    }
+
+    fn get_entry_name(&self, i: usize) -> String {
+        self.items
+            .lock()
+            .expect("Couldn't lock mutex")
+            .get(i)
+            .expect("S3List: index out of range")
+            .value()
+            .get_name()
+            .to_owned()
+    }
 }
 
 impl S3List {
@@ -39,7 +59,7 @@ impl S3List {
         S3List {
             client,
             s3_prefix: String::new(),
-            items: Vec::new(),
+            items: Arc::new(Mutex::new(Vec::new())),
             state: ListState::default(),
         }
     }
@@ -66,10 +86,10 @@ impl StatefulContainer for S3List {
     }
 
     fn next(&mut self) {
-        if self.items.len() > 0 {
+        if self.len() > 0 {
             let i = match self.state.selected() {
                 Some(i) => {
-                    if i >= self.items.len() - 1 {
+                    if i >= self.len() - 1 {
                         0
                     } else {
                         i + 1
@@ -83,11 +103,11 @@ impl StatefulContainer for S3List {
     }
 
     fn previous(&mut self) {
-        if self.items.len() > 0 {
+        if self.len() > 0 {
             let i = match self.state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        self.items.len() - 1
+                        self.len() - 1
                     } else {
                         i - 1
                     }
@@ -105,9 +125,9 @@ impl SelectableContainer<String> for S3List {
         match self.state.selected() {
             None => (),
             Some(i) => {
-                let obj = self.items.get_mut(i).unwrap();
-                match obj.value().kind {
-                    Kind::File => obj.select(selection),
+                let mut items = self.items.lock().expect("Couldn't lock mutex");
+                match items[i].value().get_kind() {
+                    Kind::File => items[i].select(selection),
                     Kind::Directory => (),
                 }
             }
@@ -116,6 +136,8 @@ impl SelectableContainer<String> for S3List {
 
     fn get_selected(&self, selection: State) -> Vec<String> {
         self.items
+            .lock()
+            .unwrap()
             .iter()
             .filter(|i| *i.selected() == selection)
             .map(|i| i.value().get_name().to_owned())
@@ -126,7 +148,7 @@ impl SelectableContainer<String> for S3List {
 #[async_trait]
 impl FileCRUD for S3List {
     async fn get_file_stream(
-        &mut self,
+        &self,
         file_name: &str,
     ) -> Result<Pin<BoxedByteStream>, ComponentError> {
         Ok(Box::pin(
@@ -138,7 +160,7 @@ impl FileCRUD for S3List {
     }
 
     async fn put_file(
-        &mut self,
+        &self,
         file_name: &str,
         stream: Pin<BoxedByteStream>,
     ) -> Result<(), ComponentError> {
@@ -154,7 +176,7 @@ impl FileCRUD for S3List {
         Ok(())
     }
 
-    async fn delete_file(&mut self, file_name: &str) -> Result<(), ComponentError> {
+    async fn delete_file(&self, file_name: &str) -> Result<(), ComponentError> {
         self.client
             .delete_object(&self.add_prefix(file_name))
             .await
@@ -162,27 +184,24 @@ impl FileCRUD for S3List {
         Ok(())
     }
 
-    async fn refresh(&mut self) -> Result<(), ComponentError> {
+    async fn refresh(&self) -> Result<(), ComponentError> {
         let files: Vec<S3Object> = self
             .client
             .list_objects(&self.s3_prefix)
             .await
             .map_err(|e| Self::handle_err(e, Some(&self.s3_prefix)))?;
-        self.items = files.into_iter().map(|i| SelectableEntry::new(i)).collect();
+        let mut items = self.items.lock().expect("Could not lock mutex");
+        *items = files.into_iter().map(|i| SelectableEntry::new(i)).collect();
         Ok(())
-    }
-
-    fn get_filenames(&self) -> Result<Vec<&str>, ComponentError> {
-        Ok(self.items.iter().map(|i| i.value().name.as_str()).collect())
     }
 
     async fn move_into_selected_dir(&mut self) -> Result<(), ComponentError> {
         match self.state.selected() {
             None => (),
             Some(i) => {
-                let selected = self.items[i].value.get_name();
+                let selected = self.get_entry_name(i);
                 if selected.chars().last().unwrap() == '/' {
-                    self.s3_prefix.push_str(selected);
+                    self.s3_prefix.push_str(&selected);
                 }
             }
         };
@@ -240,7 +259,7 @@ impl TuiListDisplay for S3List {
             ))
             .style(style)
             .borders(Borders::ALL);
-        let items = super::transform_list(&self.items);
+        let items = super::transform_list(self.items.clone());
         List::new(items)
             .block(block)
             .style(Style::default().fg(Color::White))
