@@ -16,7 +16,10 @@ use tui::{
     Terminal,
 };
 
-use crate::view::components::{err::ComponentError, FileList, State};
+use crate::{
+    utils::append_path_to_dir,
+    view::components::{err::ComponentError, FileList, State},
+};
 
 fn get_err_list<'err_stack_lif>(
     errs: Arc<Mutex<Vec<ComponentError>>>,
@@ -158,8 +161,8 @@ impl DualPaneList {
             let err_stack = self.err_stack.clone();
             let from = from.clone();
             let to = to.clone();
-            let from_path = format!("{}/{}", from_prefix, selected);
-            let to_path = format!("{}/{}", to_prefix, selected);
+            let from_path = append_path_to_dir(&from_prefix, &selected);
+            let to_path = append_path_to_dir(&to_prefix, &selected);
             tokio::spawn(async move {
                 match from.get_file_stream(&from_path).await {
                     Err(e) => err_stack.lock().expect("Couldn't lock mutex").push(e),
@@ -193,7 +196,7 @@ impl DualPaneList {
         for selected in from.get_selected(State::ToDelete) {
             let err_stack = self.err_stack.clone();
             let from = from.clone();
-            let from_path = format!("{}/{}", from_prefix, selected);
+            let from_path = append_path_to_dir(&from_prefix, &selected);
             tokio::spawn(async move {
                 from.start_processing_item(&selected);
                 from.delete_file(&from_path)
@@ -222,8 +225,8 @@ impl DualPaneList {
             let err_stack = self.err_stack.clone();
             let from = from.clone();
             let to = to.clone();
-            let from_path = format!("{}/{}", from_prefix, selected);
-            let to_path = format!("{}/{}", to_prefix, selected);
+            let from_path = append_path_to_dir(&from_prefix, &selected);
+            let to_path = append_path_to_dir(&to_prefix, &selected);
             tokio::spawn(async move {
                 match from.get_file_stream(&from_path).await {
                     Ok(file) => {

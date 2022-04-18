@@ -12,7 +12,7 @@ use crate::{
         s3::{S3Error, S3Object, S3Provider},
         Kind,
     },
-    utils::split_path_into_dir_and_filename,
+    utils::{append_path_to_dir, split_path_into_dir_and_filename},
 };
 
 use async_trait::async_trait;
@@ -210,8 +210,9 @@ impl FileCRUD for S3List {
 
     async fn get_file_stream(&self, path: &str) -> Result<Pin<BoxedByteStream>, ComponentError> {
         Ok(Box::pin(
+            // [1..] is used here to remove the trailing '/' from path
             self.client
-                .download_object(&path[..1])
+                .download_object(&path[1..])
                 .await
                 .map_err(|e| Self::handle_err(e, Some(path)))?,
         ))
@@ -226,19 +227,21 @@ impl FileCRUD for S3List {
         if let None = size.1 {
             panic!("Stream must implement size hint in order to be be sent to S3");
         }
+        // [1..] is used here to remove the trailing '/' from path
         let content = ByteStream::new_with_size(stream, size.0);
         self.client
             .put_object(&path[1..], content)
             .await
             .map_err(|e| Self::handle_err(e, Some(path)))?;
         let (dir, file_name) = split_path_into_dir_and_filename(&path);
-        if self.get_current_path() == dir {
+        if self.get_current_path() == dir[1..] {
             self.add_new_element(&file_name);
         }
         Ok(())
     }
 
     async fn delete_file(&self, path: &str) -> Result<(), ComponentError> {
+        // [1..] is used here to remove the trailing '/' from path
         self.client
             .delete_object(&path[1..])
             .await
@@ -263,18 +266,14 @@ impl FileCRUD for S3List {
     fn move_into_selected_dir(&self) {
         let state = self.state.lock().expect("Couldn't lock mutex");
         if let Some(i) = state.selected() {
-            let mut dir_name = self.get_entry_name(i);
-            // Checks if dir_name is a directory by poping '/' from it
-            if dir_name.pop().expect("Dir name is empty") == '/' {
-                let mut s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
-                // If there is a prefix, places an '/' at the end of it
-                // before appending the dir_name.
-                if !s3_prefix.is_empty() {
-                    s3_prefix.push_str("/");
-                }
-                s3_prefix.push_str(&dir_name);
-            }
-        };
+            let mut dir = self.get_entry_name(i);
+            // Removes last '/' from directory name
+            dir.pop();
+            let mut s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
+            let new_prefix = append_path_to_dir(&s3_prefix, &dir);
+            // [1..] is used here to remove the trailing '/' from new_prefix
+            *s3_prefix = new_prefix[1..].to_owned();
+        }
     }
 
     fn move_out_of_selected_dir(&self) {

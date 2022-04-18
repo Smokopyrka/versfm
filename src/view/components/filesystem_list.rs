@@ -16,7 +16,7 @@ use crate::{
         filesystem::{self, FilesystemObject},
         Kind,
     },
-    utils::split_path_into_dir_and_filename,
+    utils::{append_path_to_dir, split_path_into_dir_and_filename},
 };
 
 use super::{
@@ -275,14 +275,8 @@ impl FileCRUD for FilesystemList {
         let mut curr_path = self.curr_path.lock().expect("Couldn't lock mutex");
         let current = curr_path.to_str().unwrap();
         if let Some(selected) = self.get_name_of_selected() {
-            let path;
-            if current.chars().last().unwrap() == '/' {
-                path = format!("{}{}", &current, selected);
-            } else {
-                path = format!("{}/{}", &current, selected);
-            }
+            let path = append_path_to_dir(current, &selected);
             let path = Path::new(&path);
-
             let metadata = fs::metadata(path);
             if metadata.is_ok() && metadata.unwrap().is_dir() {
                 *curr_path = path.to_path_buf();
