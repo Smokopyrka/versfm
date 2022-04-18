@@ -11,14 +11,17 @@ use tui::{
     widgets::{Block, Borders, List, ListState},
 };
 
-use crate::providers::{
-    filesystem::{self, FilesystemObject},
-    Kind,
+use crate::{
+    providers::{
+        filesystem::{self, FilesystemObject},
+        Kind,
+    },
+    utils::split_path_into_dir_and_filename,
 };
 
 use super::{
-    err::ComponentError, split_path_into_dir_and_filename, BoxedByteStream, FileCRUD, FileEntry,
-    SelectableContainer, SelectableEntry, State, StatefulContainer, TuiListDisplay,
+    err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, SelectableContainer,
+    SelectableEntry, State, StatefulContainer, TuiListDisplay,
 };
 
 impl FileEntry for FilesystemObject {

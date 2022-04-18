@@ -4,12 +4,15 @@ use std::{
 };
 
 use super::{
-    err::ComponentError, split_path_into_dir_and_filename, BoxedByteStream, FileCRUD, FileEntry,
-    SelectableContainer, SelectableEntry, State, StatefulContainer, TuiListDisplay,
+    err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, SelectableContainer,
+    SelectableEntry, State, StatefulContainer, TuiListDisplay,
 };
-use crate::providers::{
-    s3::{S3Error, S3Object, S3Provider},
-    Kind,
+use crate::{
+    providers::{
+        s3::{S3Error, S3Object, S3Provider},
+        Kind,
+    },
+    utils::split_path_into_dir_and_filename,
 };
 
 use async_trait::async_trait;
@@ -208,7 +211,7 @@ impl FileCRUD for S3List {
     async fn get_file_stream(&self, path: &str) -> Result<Pin<BoxedByteStream>, ComponentError> {
         Ok(Box::pin(
             self.client
-                .download_object(&path)
+                .download_object(&path[..1])
                 .await
                 .map_err(|e| Self::handle_err(e, Some(path)))?,
         ))
