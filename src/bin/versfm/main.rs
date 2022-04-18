@@ -7,7 +7,6 @@ use std::error::Error;
 use std::{
     io::{self, Stdout},
     sync::mpsc::{self, Receiver},
-    thread,
     time::{Duration, Instant},
 };
 use tui::{backend::CrosstermBackend, Terminal};
@@ -27,7 +26,7 @@ fn spawn_sender() -> Receiver<Event<KeyEvent>> {
     let (tx, rx) = mpsc::channel();
     let tick_rate = Duration::from_millis(75);
 
-    thread::spawn(move || {
+    tokio::spawn(async move {
         let mut last_tick = Instant::now();
 
         loop {
