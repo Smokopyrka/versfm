@@ -10,6 +10,7 @@ pub mod s3;
 pub enum Kind {
     File,
     Directory,
+    Unknown,
 }
 
 pub type BoxedByteStream = Box<dyn Stream<Item = Result<Bytes, io::Error>> + Send + 'static>;

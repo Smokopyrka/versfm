@@ -23,6 +23,7 @@ use self::err::ComponentError;
 #[derive(Clone, PartialEq)]
 pub enum State {
     Unselected,
+    Proccessed,
     ToMove,
     ToDelete,
     ToCopy,
@@ -50,6 +51,10 @@ impl<T> SelectableEntry<T> {
     }
 
     fn select(&mut self, new: State) {
+        if new == State::Proccessed {
+            self.state = new;
+            return;
+        }
         self.state = match self.state {
             State::Unselected => new,
             _ => State::Unselected,
@@ -76,6 +81,8 @@ pub trait SelectableContainer<T> {
 #[async_trait]
 pub trait FileCRUD {
     async fn refresh(&self) -> Result<(), ComponentError>;
+    fn start_processing_item(&self, file_name: &str);
+    fn stop_processing_item(&self, file_name: &str);
     async fn get_file_stream(
         &self,
         file_name: &str,
@@ -86,8 +93,8 @@ pub trait FileCRUD {
         stream: Pin<BoxedByteStream>,
     ) -> Result<(), ComponentError>;
     async fn delete_file(&self, file_name: &str) -> Result<(), ComponentError>;
-    async fn move_into_selected_dir(&self) -> Result<(), ComponentError>;
-    async fn move_out_of_selected_dir(&self) -> Result<(), ComponentError>;
+    fn move_into_selected_dir(&self);
+    fn move_out_of_selected_dir(&self);
     fn get_current_path(&self) -> String;
     fn get_resource_name(&self) -> &str;
 }
@@ -110,9 +117,11 @@ where
             let mut text = o.value().get_name().to_owned();
             let mut style = Style::default();
 
-            if let Kind::Directory = o.value().get_kind() {
-                style = style.add_modifier(Modifier::ITALIC);
-            }
+            match o.value().get_kind() {
+                Kind::Directory => style = style.add_modifier(Modifier::ITALIC),
+                Kind::Unknown => style = style.fg(Color::Gray),
+                _ => (),
+            };
             match o.selected() {
                 State::ToMove => {
                     style = style.bg(Color::LightBlue);
@@ -126,6 +135,10 @@ where
                     style = style.bg(Color::Green);
                     text.push_str(" [C]");
                 }
+                State::Proccessed => {
+                    style = style.bg(Color::DarkGray);
+                    text.push_str(" [/]");
+                }
                 _ => (),
             }
             ListItem::new(text).style(style)
@@ -133,9 +146,14 @@ where
         .collect()
 }
 
-fn get_filename_from_path(path: &str) -> &str {
-    path.rsplit("/").next().unwrap()
+fn split_path_into_dir_and_filename(path: &str) -> (&str, &str) {
+    let split: Vec<&str> = path.rsplitn(2, "/").collect();
+    if split.len() != 2 {
+        panic!("Path has no '/' separators in it");
+    }
+    return (split[1], split[0]);
 }
+
 pub trait FileList:
     StatefulContainer + SelectableContainer<String> + FileCRUD + TuiListDisplay
 {

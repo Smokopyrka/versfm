@@ -65,6 +65,7 @@ impl Stream for FileBytesStream {
 pub fn get_files_list(path: &Path) -> Result<Vec<FilesystemObject>, io::Error> {
     if fs::metadata(path)?.is_dir() {
         return Ok(fs::read_dir(path)?
+            .filter(|f| f.is_ok())
             .map(|f| {
                 let path = f.unwrap().path();
                 let mut file_name = path
@@ -74,11 +75,15 @@ pub fn get_files_list(path: &Path) -> Result<Vec<FilesystemObject>, io::Error> {
                     .expect("Cannot convert non-utf8 filename to string")
                     .to_owned();
                 let kind: Kind;
-                if fs::metadata(&path).unwrap().is_dir() {
-                    file_name.push_str("/");
-                    kind = Kind::Directory
+                if let Ok(metadata) = fs::metadata(&path) {
+                    if metadata.is_dir() {
+                        file_name.push_str("/");
+                        kind = Kind::Directory
+                    } else {
+                        kind = Kind::File;
+                    }
                 } else {
-                    kind = Kind::File;
+                    kind = Kind::Unknown;
                 }
                 FilesystemObject {
                     name: file_name,

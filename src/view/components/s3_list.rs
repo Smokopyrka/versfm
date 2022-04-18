@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{
-    err::ComponentError, get_filename_from_path, BoxedByteStream, FileCRUD, FileEntry,
+    err::ComponentError, split_path_into_dir_and_filename, BoxedByteStream, FileCRUD, FileEntry,
     SelectableContainer, SelectableEntry, State, StatefulContainer, TuiListDisplay,
 };
 use crate::providers::{
@@ -51,6 +51,13 @@ impl S3List {
             .value()
             .get_name()
             .to_owned()
+    }
+
+    fn set_item_state(&self, file_name: &str, state: State) {
+        let mut items = self.items.lock().expect("Couldn't lock mutex");
+        if let Some(item) = items.iter_mut().find(|v| v.value().get_name() == file_name) {
+            item.select(state);
+        }
     }
 }
 
@@ -101,10 +108,6 @@ impl S3List {
             .lock()
             .expect("Couldn't lock mutex")
             .to_owned()
-    }
-
-    fn add_prefix(&self, to: &str) -> String {
-        format!("{}{}", &self.get_prefix(), to)
     }
 
     fn handle_err(err: S3Error, file: Option<&str>) -> ComponentError {
@@ -167,14 +170,14 @@ impl StatefulContainer for S3List {
 
 impl SelectableContainer<String> for S3List {
     fn select(&self, selection: State) {
+        let mut items = self.items.lock().expect("Couldn't lock mutex");
         match self.get_current().selected() {
             None => (),
             Some(i) => {
-                let mut items = self.items.lock().expect("Couldn't lock mutex");
-                if items.len() > i && i > 0 {
+                if items.len() > i {
                     match items[i].value().get_kind() {
                         Kind::File => items[i].select(selection),
-                        Kind::Directory => (),
+                        Kind::Directory | Kind::Unknown => (),
                     }
                 }
             }
@@ -194,6 +197,14 @@ impl SelectableContainer<String> for S3List {
 
 #[async_trait]
 impl FileCRUD for S3List {
+    fn start_processing_item(&self, file_name: &str) {
+        self.set_item_state(file_name, State::Proccessed);
+    }
+
+    fn stop_processing_item(&self, file_name: &str) {
+        self.set_item_state(file_name, State::Unselected);
+    }
+
     async fn get_file_stream(&self, path: &str) -> Result<Pin<BoxedByteStream>, ComponentError> {
         Ok(Box::pin(
             self.client
@@ -214,29 +225,28 @@ impl FileCRUD for S3List {
         }
         let content = ByteStream::new_with_size(stream, size.0);
         self.client
-            .put_object(&path, content)
+            .put_object(&path[1..], content)
             .await
             .map_err(|e| Self::handle_err(e, Some(path)))?;
-        let path_dir = path.rsplitn(2, "/").last().unwrap();
-        let mut curr_dir = self.get_current_path();
-        if curr_dir == path_dir {
-            self.add_new_element(get_filename_from_path(path));
+        let (dir, file_name) = split_path_into_dir_and_filename(&path);
+        if self.get_current_path() == dir {
+            self.add_new_element(&file_name);
         }
         Ok(())
     }
 
     async fn delete_file(&self, path: &str) -> Result<(), ComponentError> {
         self.client
-            .delete_object(&path)
+            .delete_object(&path[1..])
             .await
             .map_err(|e| Self::handle_err(e, Some(path)))?;
-        self.remove_element_of_filename(get_filename_from_path(path));
+        let (_, file_name) = split_path_into_dir_and_filename(path);
+        self.remove_element_of_filename(file_name);
         Ok(())
     }
 
     async fn refresh(&self) -> Result<(), ComponentError> {
-        let mut path = self.get_prefix();
-        // path.push_str("/");
+        let path = self.get_prefix();
         let files: Vec<S3Object> = self
             .client
             .list_objects(&path)
@@ -247,52 +257,32 @@ impl FileCRUD for S3List {
         Ok(())
     }
 
-    async fn move_into_selected_dir(&self) -> Result<(), ComponentError> {
-        match self.get_current().selected() {
-            None => (),
-            Some(i) => {
-                let mut selected = self.get_entry_name(i);
-                if selected.chars().last().unwrap() == '/' {
-                    selected.pop();
-                    self.s3_prefix
-                        .lock()
-                        .expect("Couldn't lock mutex")
-                        .push_str(&selected);
+    fn move_into_selected_dir(&self) {
+        let state = self.state.lock().expect("Couldn't lock mutex");
+        if let Some(i) = state.selected() {
+            let mut dir_name = self.get_entry_name(i);
+            // Checks if dir_name is a directory by poping '/' from it
+            if dir_name.pop().expect("Dir name is empty") == '/' {
+                let mut s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
+                // If there is a prefix, places an '/' at the end of it
+                // before appending the dir_name.
+                if !s3_prefix.is_empty() {
+                    s3_prefix.push_str("/");
                 }
+                s3_prefix.push_str(&dir_name);
             }
         };
-        match self.refresh().await {
-            Err(err) => {
-                self.move_out_of_selected_dir().await?;
-                Err(err)
-            }
-            Ok(_) => {
-                self.state.lock().expect("Couldn't lock mutex").select(None);
-                Ok(())
-            }
-        }
     }
 
-    async fn move_out_of_selected_dir(&self) -> Result<(), ComponentError> {
-        let current = self.get_prefix();
-        if !current.is_empty() {
-            let mut s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
-            *s3_prefix = current
+    fn move_out_of_selected_dir(&self) {
+        let mut s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
+        if !s3_prefix.is_empty() {
+            *s3_prefix = s3_prefix
                 .rmatch_indices('/')
-                .nth(1)
-                .map(|(i, _)| current[..(i + 1)].to_owned())
+                .nth(0)
+                .map(|(i, _)| s3_prefix[..i].to_owned())
                 .unwrap_or(String::from(""));
         };
-        Ok(())
-        // match self.refresh().await {
-        //     Err(err) => {
-        //         let s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
-        //         *s3_prefix = current;
-        //         self.move_into_selected_dir().await?;
-        //         Err(err)
-        //     }
-        //     Ok(_) => Ok(()),
-        // }
     }
 
     fn get_current_path(&self) -> String {

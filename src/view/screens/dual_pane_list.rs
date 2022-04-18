@@ -102,16 +102,18 @@ impl DualPaneList {
                 }
             }
             KeyCode::Char(' ') => {
-                curr_list
-                    .move_into_selected_dir()
-                    .await
-                    .unwrap_or_else(|e| self.handle_err(e));
+                curr_list.move_into_selected_dir();
+                if let Err(e) = curr_list.refresh().await {
+                    curr_list.move_out_of_selected_dir();
+                    self.err_stack.lock().expect("Clouldn't lock mutex").push(e);
+                }
             }
             KeyCode::Backspace => {
-                curr_list
-                    .move_out_of_selected_dir()
-                    .await
-                    .unwrap_or_else(|e| self.handle_err(e));
+                curr_list.move_out_of_selected_dir();
+                if let Err(e) = curr_list.refresh().await {
+                    curr_list.move_into_selected_dir();
+                    self.err_stack.lock().expect("Clouldn't lock mutex").push(e);
+                }
             }
             KeyCode::Down | KeyCode::Char('j') => curr_list.next(),
             KeyCode::Up | KeyCode::Char('k') => curr_list.previous(),
@@ -161,10 +163,13 @@ impl DualPaneList {
             tokio::spawn(async move {
                 match from.get_file_stream(&from_path).await {
                     Err(e) => err_stack.lock().expect("Couldn't lock mutex").push(e),
-                    Ok(file) => to
-                        .put_file(&to_path, file)
-                        .await
-                        .unwrap_or_else(|e| err_stack.lock().expect("Couldn't lock mutex").push(e)),
+                    Ok(file) => {
+                        from.start_processing_item(&selected);
+                        to.put_file(&to_path, file).await.unwrap_or_else(|e| {
+                            err_stack.lock().expect("Couldn't lock mutex").push(e)
+                        });
+                        from.stop_processing_item(&selected);
+                    }
                 }
             });
         }
@@ -190,6 +195,7 @@ impl DualPaneList {
             let from = from.clone();
             let from_path = format!("{}/{}", from_prefix, selected);
             tokio::spawn(async move {
+                from.start_processing_item(&selected);
                 from.delete_file(&from_path)
                     .await
                     .unwrap_or_else(|e| err_stack.lock().expect("Couldn't lock mutex").push(e));
@@ -218,10 +224,10 @@ impl DualPaneList {
             let to = to.clone();
             let from_path = format!("{}/{}", from_prefix, selected);
             let to_path = format!("{}/{}", to_prefix, selected);
-
             tokio::spawn(async move {
                 match from.get_file_stream(&from_path).await {
                     Ok(file) => {
+                        from.start_processing_item(&selected);
                         to.put_file(&to_path, file)
                             .await
                             .unwrap_or_else(|e| err_stack.lock().unwrap().push(e));
