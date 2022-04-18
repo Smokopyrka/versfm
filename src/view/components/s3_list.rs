@@ -41,19 +41,20 @@ pub struct S3List {
 }
 
 impl S3List {
-    fn len(&self) -> usize {
-        self.items.lock().unwrap().len()
-    }
-
-    fn get_entry_name(&self, i: usize) -> String {
-        self.items
-            .lock()
-            .expect("Couldn't lock mutex")
-            .get(i)
-            .expect("S3List: index out of range")
-            .value()
-            .get_name()
-            .to_owned()
+    fn get_name_of_selected(&self) -> Option<String> {
+        let items = self.items.lock().expect("Couldn't lock mutex");
+        let state = self.state.lock().expect("Couldn't lock mutex");
+        if let Some(i) = state.selected() {
+            return Some(
+                items
+                    .get(i)
+                    .expect("FilesystemList index out of range")
+                    .value()
+                    .get_name()
+                    .to_owned(),
+            );
+        }
+        None
     }
 
     fn set_item_state(&self, file_name: &str, state: State) {
@@ -75,14 +76,14 @@ impl S3List {
     }
 
     fn remove_element_of_filename(&self, file_name: &str) {
-        let mut elements = self.items.lock().expect("Couldn't lock mutex");
+        let mut items = self.items.lock().expect("Couldn't lock mutex");
         let mut state = self.state.lock().expect("Couldn't lock mutex");
-        if let Some((element_index, _)) = elements
+        if let Some((element_index, _)) = items
             .iter()
             .enumerate()
             .find(|(_, v)| v.value().get_name() == file_name)
         {
-            elements.remove(element_index);
+            items.remove(element_index);
             if let Some(selected) = state.selected() {
                 if element_index < selected {
                     state.select(Some(selected - 1));
@@ -94,8 +95,8 @@ impl S3List {
     }
 
     fn add_new_element(&self, file_name: &str) {
-        let mut elements = self.items.lock().expect("Couldn't lock mutex");
-        elements.push(SelectableEntry::new(S3Object {
+        let mut items = self.items.lock().expect("Couldn't lock mutex");
+        items.push(SelectableEntry::new(S3Object {
             name: file_name.to_owned(),
             kind: Kind::File,
             prefix: String::from(""),
@@ -131,10 +132,12 @@ impl StatefulContainer for S3List {
     }
 
     fn next(&self) {
-        if self.len() > 0 {
-            let i = match self.get_current().selected() {
+        let items = self.items.lock().expect("Couldn't lock mutex");
+        let mut state = self.state.lock().expect("Couldn't lock mutex");
+        if items.len() > 0 {
+            let i = match state.selected() {
                 Some(i) => {
-                    if i >= self.len() - 1 {
+                    if i >= items.len() - 1 {
                         0
                     } else {
                         i + 1
@@ -143,19 +146,18 @@ impl StatefulContainer for S3List {
                 None => 0,
             };
 
-            self.state
-                .lock()
-                .expect("Couldn't lock mutex")
-                .select(Some(i));
+            state.select(Some(i));
         }
     }
 
     fn previous(&self) {
-        if self.len() > 0 {
-            let i = match self.get_current().selected() {
+        let items = self.items.lock().expect("Couldn't lock mutex");
+        let mut state = self.state.lock().expect("Couldn't lock mutex");
+        if items.len() > 0 {
+            let i = match state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        self.len() - 1
+                        items.len() - 1
                     } else {
                         i - 1
                     }
@@ -163,10 +165,7 @@ impl StatefulContainer for S3List {
                 None => 0,
             };
 
-            self.state
-                .lock()
-                .expect("Couldn't lock mutex")
-                .select(Some(i));
+            state.select(Some(i));
         }
     }
 }
@@ -264,9 +263,11 @@ impl FileCRUD for S3List {
     }
 
     fn move_into_selected_dir(&self) {
-        let state = self.state.lock().expect("Couldn't lock mutex");
-        if let Some(i) = state.selected() {
-            let mut dir = self.get_entry_name(i);
+        if let Some(mut dir) = self.get_name_of_selected() {
+            let dir_last_char = dir.chars().last();
+            if dir_last_char.is_none() || dir_last_char.unwrap() != '/' {
+                return;
+            }
             // Removes last '/' from directory name
             dir.pop();
             let mut s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");

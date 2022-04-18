@@ -60,14 +60,15 @@ impl FilesystemList {
     }
 
     fn remove_element_of_filename(&self, file_name: &str) {
-        let mut elements = self.items.lock().expect("Couldn't lock mutex");
-        if let Some((element_index, _)) = elements
+        let mut items = self.items.lock().expect("Couldn't lock mutex");
+        if let Some((element_index, _)) = items
             .iter()
             .enumerate()
             .find(|(_, v)| v.value().get_name() == file_name)
         {
             let mut state = self.state.lock().expect("Couldn't lock mutex");
-            elements.remove(element_index);
+            items.remove(element_index);
+            // Modifies state to compensate for now removed item
             if let Some(selected) = state.selected() {
                 if element_index < selected {
                     state.select(Some(selected - 1));
@@ -87,20 +88,20 @@ impl FilesystemList {
         }));
     }
 
-    fn get_entry_name(&self, i: usize) -> String {
-        self.items
-            .lock()
-            .expect("Coldn't lock mutex")
-            .get(i)
-            .expect("FilesystemList index out of range")
-            .value()
-            .get_name()
-            .to_owned()
-    }
-
     fn get_name_of_selected(&self) -> Option<String> {
+        let items = self.items.lock().expect("Couldn't lock mutex");
         let state = self.state.lock().expect("Couldn't lock mutex");
-        state.selected().and_then(|i| Some(self.get_entry_name(i)))
+        if let Some(i) = state.selected() {
+            return Some(
+                items
+                    .get(i)
+                    .expect("FilesystemList index out of range")
+                    .value()
+                    .get_name()
+                    .to_owned(),
+            );
+        }
+        None
     }
 
     fn get_prefix(&self) -> String {
