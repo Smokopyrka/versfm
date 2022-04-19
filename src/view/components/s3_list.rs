@@ -22,6 +22,7 @@ use tui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListState},
 };
+use versfm_derive::StatefulContainer;
 
 impl FileEntry for S3Object {
     fn get_name(&self) -> &str {
@@ -33,6 +34,7 @@ impl FileEntry for S3Object {
     }
 }
 
+#[derive(StatefulContainer)]
 pub struct S3List {
     client: S3Provider,
     s3_prefix: Mutex<String>,
@@ -123,50 +125,6 @@ impl S3List {
             },
             err.code().to_owned(),
         )
-    }
-}
-
-impl StatefulContainer for S3List {
-    fn get_current(&self) -> ListState {
-        self.state.lock().expect("Couldn't lock mutex").clone()
-    }
-
-    fn next(&self) {
-        let items = self.items.lock().expect("Couldn't lock mutex");
-        let mut state = self.state.lock().expect("Couldn't lock mutex");
-        if items.len() > 0 {
-            let i = match state.selected() {
-                Some(i) => {
-                    if i >= items.len() - 1 {
-                        0
-                    } else {
-                        i + 1
-                    }
-                }
-                None => 0,
-            };
-
-            state.select(Some(i));
-        }
-    }
-
-    fn previous(&self) {
-        let items = self.items.lock().expect("Couldn't lock mutex");
-        let mut state = self.state.lock().expect("Couldn't lock mutex");
-        if items.len() > 0 {
-            let i = match state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        items.len() - 1
-                    } else {
-                        i - 1
-                    }
-                }
-                None => 0,
-            };
-
-            state.select(Some(i));
-        }
     }
 }
 

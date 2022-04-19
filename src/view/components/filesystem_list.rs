@@ -1,3 +1,5 @@
+extern crate versfm_derive;
+
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
@@ -10,6 +12,7 @@ use tui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListState},
 };
+use versfm_derive::StatefulContainer;
 
 use crate::{
     providers::{
@@ -34,6 +37,7 @@ impl FileEntry for FilesystemObject {
     }
 }
 
+#[derive(StatefulContainer)]
 pub struct FilesystemList {
     user: String,
     curr_path: Arc<Mutex<PathBuf>>,
@@ -145,50 +149,6 @@ impl FilesystemList {
             },
             format!("{:?}", err.kind()),
         )
-    }
-}
-
-impl StatefulContainer for FilesystemList {
-    fn get_current(&self) -> ListState {
-        self.state.lock().expect("Couldn't lock mutex").clone()
-    }
-
-    fn next(&self) {
-        let items = self.items.lock().expect("Couldn't lock mutex");
-        let mut state = self.state.lock().expect("Couldn't lock mutex");
-        if items.len() > 0 {
-            let i = match state.selected() {
-                Some(i) => {
-                    if i >= items.len() - 1 {
-                        0
-                    } else {
-                        i + 1
-                    }
-                }
-                None => 0,
-            };
-
-            state.select(Some(i));
-        }
-    }
-
-    fn previous(&self) {
-        let items = self.items.lock().expect("Couldn't lock mutex");
-        let mut state = self.state.lock().expect("Couldn't lock mutex");
-        if items.len() > 0 {
-            let i = match state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        items.len() - 1
-                    } else {
-                        i - 1
-                    }
-                }
-                None => 0,
-            };
-
-            state.select(Some(i));
-        }
     }
 }
 
