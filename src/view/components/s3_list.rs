@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{
-    err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, SelectableContainer,
+    err::ComponentError, BoxedByteStream, FileCRUD, FilenameEntry, SelectableContainer,
     SelectableEntry, State, StatefulContainer, TuiListDisplay,
 };
 use crate::{
@@ -24,21 +24,11 @@ use tui::{
 };
 use versfm_derive::StatefulContainer;
 
-impl FileEntry for S3Object {
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-
-    fn get_kind(&self) -> &Kind {
-        &self.kind
-    }
-}
-
 #[derive(StatefulContainer)]
 pub struct S3List {
     client: S3Provider,
     s3_prefix: Mutex<String>,
-    items: Arc<Mutex<Vec<SelectableEntry<S3Object>>>>,
+    items: Arc<Mutex<Vec<SelectableEntry<FilenameEntry>>>>,
     state: Arc<Mutex<ListState>>,
 }
 
@@ -98,14 +88,9 @@ impl S3List {
 
     fn add_new_element(&self, file_name: &str) {
         let mut items = self.items.lock().expect("Couldn't lock mutex");
-        items.push(SelectableEntry::new(S3Object {
-            name: file_name.to_owned(),
+        items.push(SelectableEntry::new(FilenameEntry {
+            file_name: file_name.to_owned(),
             kind: Kind::File,
-            prefix: String::from(""),
-            last_mod: None,
-            size: None,
-            storage_class: None,
-            owner: None,
         }));
     }
 
@@ -216,7 +201,15 @@ impl FileCRUD for S3List {
             .await
             .map_err(|e| Self::handle_err(e, Some(&self.get_prefix())))?;
         let mut items = self.items.lock().expect("Could not lock mutex");
-        *items = files.into_iter().map(|i| SelectableEntry::new(i)).collect();
+        *items = files
+            .into_iter()
+            .map(|i| {
+                SelectableEntry::new(FilenameEntry {
+                    file_name: i.name,
+                    kind: i.kind,
+                })
+            })
+            .collect();
         Ok(())
     }
 
@@ -232,6 +225,7 @@ impl FileCRUD for S3List {
             let new_prefix = append_path_to_dir(&s3_prefix, &dir);
             // [1..] is used here to remove the trailing '/' from new_prefix
             *s3_prefix = new_prefix[1..].to_owned();
+            self.clear_state();
         }
     }
 
@@ -243,6 +237,7 @@ impl FileCRUD for S3List {
                 .nth(0)
                 .map(|(i, _)| s3_prefix[..i].to_owned())
                 .unwrap_or(String::from(""));
+            self.clear_state();
         };
     }
 

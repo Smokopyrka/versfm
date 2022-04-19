@@ -75,6 +75,10 @@ pub fn stateful_container_derive(tokens: TokenStream) -> TokenStream {
                 self.state.lock().expect("Couldn't lock mutex").clone()
             }
 
+            fn clear_state(&self) {
+                self.state.lock().expect("Couldn't lock mutex").select(None);
+            }
+
             fn next(&self) {
                 let items = self.items.lock().expect("Couldn't lock mutex");
                 let mut state = self.state.lock().expect("Couldn't lock mutex");

@@ -15,33 +15,20 @@ use tui::{
 use versfm_derive::StatefulContainer;
 
 use crate::{
-    providers::{
-        filesystem::{self, FilesystemObject},
-        Kind,
-    },
+    providers::{filesystem, Kind},
     utils::{append_path_to_dir, split_path_into_dir_and_filename},
 };
 
 use super::{
-    err::ComponentError, BoxedByteStream, FileCRUD, FileEntry, SelectableContainer,
+    err::ComponentError, BoxedByteStream, FileCRUD, FilenameEntry, SelectableContainer,
     SelectableEntry, State, StatefulContainer, TuiListDisplay,
 };
-
-impl FileEntry for FilesystemObject {
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-
-    fn get_kind(&self) -> &Kind {
-        &self.kind
-    }
-}
 
 #[derive(StatefulContainer)]
 pub struct FilesystemList {
     user: String,
     curr_path: Arc<Mutex<PathBuf>>,
-    items: Arc<Mutex<Vec<SelectableEntry<FilesystemObject>>>>,
+    items: Arc<Mutex<Vec<SelectableEntry<FilenameEntry>>>>,
     state: Arc<Mutex<ListState>>,
 }
 
@@ -85,9 +72,8 @@ impl FilesystemList {
 
     fn add_new_element(&self, file_name: &str) {
         let mut elements = self.items.lock().expect("Couldn't lock mutex");
-        elements.push(SelectableEntry::new(FilesystemObject {
-            name: file_name.to_owned(),
-            dir: None,
+        elements.push(SelectableEntry::new(FilenameEntry {
+            file_name: file_name.to_owned(),
             kind: Kind::File,
         }));
     }
@@ -119,11 +105,16 @@ impl FilesystemList {
 
     fn get_list_entries(
         path: &Path,
-    ) -> Result<Vec<SelectableEntry<FilesystemObject>>, ComponentError> {
+    ) -> Result<Vec<SelectableEntry<FilenameEntry>>, ComponentError> {
         Ok(filesystem::get_files_list(path)
             .map_err(|e| Self::handle_error(e, Some(path.as_os_str().to_str().unwrap())))?
             .into_iter()
-            .map(SelectableEntry::new)
+            .map(|i| {
+                SelectableEntry::new(FilenameEntry {
+                    file_name: i.name,
+                    kind: i.kind,
+                })
+            })
             .collect())
     }
 
@@ -229,6 +220,7 @@ impl FileCRUD for FilesystemList {
         let mut current = self.curr_path.lock().expect("Couldn't lock mutex");
         if let Some(path) = current.parent() {
             *current = path.to_path_buf();
+            self.clear_state();
         }
     }
 
@@ -242,6 +234,7 @@ impl FileCRUD for FilesystemList {
             if metadata.is_ok() && metadata.unwrap().is_dir() {
                 *curr_path = path.to_path_buf();
             }
+            self.clear_state();
         }
     }
 

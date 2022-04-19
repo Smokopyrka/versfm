@@ -62,15 +62,26 @@ impl<T> SelectableEntry<T> {
     }
 }
 
-pub trait FileEntry {
-    fn get_name(&self) -> &str;
-    fn get_kind(&self) -> &Kind;
+pub struct FilenameEntry {
+    file_name: String,
+    kind: Kind,
+}
+
+impl FilenameEntry {
+    fn get_name(&self) -> &str {
+        &self.file_name
+    }
+
+    fn get_kind(&self) -> &Kind {
+        &self.kind
+    }
 }
 
 pub trait StatefulContainer {
     fn previous(&self);
     fn next(&self);
     fn get_current(&self) -> ListState;
+    fn clear_state(&self);
 }
 
 pub trait SelectableContainer<T> {
@@ -103,12 +114,9 @@ pub trait TuiListDisplay {
     fn make_file_list(&self, is_focused: bool) -> List;
 }
 
-fn transform_list<'entry_life, T>(
-    options: Arc<Mutex<Vec<SelectableEntry<T>>>>,
-) -> Vec<ListItem<'entry_life>>
-where
-    T: FileEntry,
-{
+fn transform_list<'entry_life>(
+    options: Arc<Mutex<Vec<SelectableEntry<FilenameEntry>>>>,
+) -> Vec<ListItem<'entry_life>> {
     options
         .lock()
         .expect("Couldn't lock mutex")
