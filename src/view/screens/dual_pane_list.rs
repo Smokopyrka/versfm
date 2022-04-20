@@ -18,7 +18,7 @@ use tui::{
 
 use crate::{
     utils::append_path_to_dir,
-    view::components::{err::ComponentError, FileList, State},
+    view::components::{err::ComponentError, FileCRUDListWidget, State},
 };
 
 fn get_err_list<'err_stack_lif>(
@@ -46,16 +46,16 @@ enum CurrentList {
 pub struct DualPaneList {
     term: Terminal<CrosstermBackend<Stdout>>,
     curr_list: CurrentList,
-    left_pane: Arc<Box<dyn FileList + Sync + Send>>,
-    right_pane: Arc<Box<dyn FileList + Sync + Send>>,
+    left_pane: Arc<Box<dyn FileCRUDListWidget>>,
+    right_pane: Arc<Box<dyn FileCRUDListWidget>>,
     err_stack: Arc<Mutex<Vec<ComponentError>>>,
 }
 
 impl DualPaneList {
     pub async fn new(
         term: Terminal<CrosstermBackend<Stdout>>,
-        left_pane: Box<dyn FileList + Sync + Send>,
-        right_pane: Box<dyn FileList + Sync + Send>,
+        left_pane: Box<dyn FileCRUDListWidget>,
+        right_pane: Box<dyn FileCRUDListWidget>,
     ) -> DualPaneList {
         let mut err_stack: Vec<ComponentError> = Vec::new();
         left_pane
@@ -152,8 +152,8 @@ impl DualPaneList {
 
     async fn copy_from_to(
         &self,
-        from: Arc<Box<dyn FileList + Sync + Send>>,
-        to: Arc<Box<dyn FileList + Sync + Send>>,
+        from: Arc<Box<dyn FileCRUDListWidget>>,
+        to: Arc<Box<dyn FileCRUDListWidget>>,
     ) -> Result<(), ComponentError> {
         let from_prefix = from.get_current_path();
         let to_prefix = to.get_current_path();
@@ -190,7 +190,7 @@ impl DualPaneList {
 
     async fn delete_from(
         &self,
-        from: Arc<Box<dyn FileList + Sync + Send>>,
+        from: Arc<Box<dyn FileCRUDListWidget>>,
     ) -> Result<(), ComponentError> {
         let from_prefix = from.get_current_path();
         for selected in from.get_selected(State::ToDelete) {
@@ -216,8 +216,8 @@ impl DualPaneList {
 
     async fn move_from_to(
         &self,
-        from: Arc<Box<dyn FileList + Sync + Send>>,
-        to: Arc<Box<dyn FileList + Sync + Send>>,
+        from: Arc<Box<dyn FileCRUDListWidget>>,
+        to: Arc<Box<dyn FileCRUDListWidget>>,
     ) {
         let from_prefix = from.get_current_path();
         let to_prefix = to.get_current_path();
@@ -244,7 +244,7 @@ impl DualPaneList {
         }
     }
 
-    fn get_curr_list(&mut self) -> Arc<Box<dyn FileList + Sync + Send>> {
+    fn get_curr_list(&mut self) -> Arc<Box<dyn FileCRUDListWidget>> {
         match self.curr_list {
             CurrentList::LeftList => self.left_pane.clone(),
             CurrentList::RightList => self.right_pane.clone(),

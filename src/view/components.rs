@@ -1,7 +1,4 @@
-use std::{
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
+use std::{pin::Pin, sync::MutexGuard};
 
 use async_trait::async_trait;
 
@@ -13,7 +10,7 @@ pub use filesystem_list::FilesystemList;
 pub use s3_list::S3List;
 use tui::{
     style::{Color, Modifier, Style},
-    widgets::{List, ListItem, ListState},
+    widgets::{Block, Borders, List, ListItem, ListState},
 };
 
 use crate::providers::{BoxedByteStream, Kind};
@@ -68,11 +65,11 @@ pub struct FilenameEntry {
 }
 
 impl FilenameEntry {
-    fn get_name(&self) -> &str {
+    pub fn get_name(&self) -> &str {
         &self.file_name
     }
 
-    fn get_kind(&self) -> &Kind {
+    pub fn get_kind(&self) -> &Kind {
         &self.kind
     }
 }
@@ -87,6 +84,141 @@ pub trait StatefulContainer {
 pub trait SelectableContainer<T> {
     fn select(&self, selection: State);
     fn get_selected(&self, selection: State) -> Vec<T>;
+}
+
+pub trait ASelectableFilenameList:
+    StatefulContainer + SelectableContainer<String> + Sync + Send
+{
+    fn lock_items(&self) -> MutexGuard<Vec<SelectableEntry<FilenameEntry>>>;
+    fn lock_state(&self) -> MutexGuard<ListState>;
+    fn get_name_of_selected(&self) -> Option<String> {
+        let items = self.lock_items();
+        let state = self.lock_state();
+        if let Some(i) = state.selected() {
+            return Some(
+                items
+                    .get(i)
+                    .expect("SelectableFilenameList index out of range")
+                    .value()
+                    .get_name()
+                    .to_owned(),
+            );
+        }
+        None
+    }
+
+    fn set_item_state_by_filename(&self, file_name: &str, state: State) {
+        let mut items = self.lock_items();
+        if let Some(item) = items.iter_mut().find(|v| v.value().get_name() == file_name) {
+            item.select(state);
+        }
+    }
+
+    fn remove_element_of_filename(&self, file_name: &str) {
+        let mut items = self.lock_items();
+        let mut state = self.lock_state();
+        if let Some((element_index, _)) = items
+            .iter()
+            .enumerate()
+            .find(|(_, v)| v.value().get_name() == file_name)
+        {
+            items.remove(element_index);
+            if let Some(selected) = state.selected() {
+                if element_index < selected {
+                    state.select(Some(selected - 1));
+                } else if element_index == selected {
+                    state.select(None);
+                }
+            }
+        }
+    }
+
+    fn add_new_element(&self, file_name: &str) {
+        let mut items = self.lock_items();
+        items.push(SelectableEntry::new(FilenameEntry {
+            file_name: file_name.to_owned(),
+            kind: Kind::File,
+        }));
+    }
+}
+
+impl<T: ASelectableFilenameList> StatefulContainer for T {
+    fn get_current(&self) -> ListState {
+        self.lock_state().clone()
+    }
+
+    fn clear_state(&self) {
+        self.lock_state().select(None);
+    }
+
+    fn next(&self) {
+        let items = self.lock_items();
+        let mut state = self.lock_state();
+        if items.len() > 0 {
+            let i = match state.selected() {
+                Some(i) => {
+                    if i >= items.len() - 1 {
+                        0
+                    } else {
+                        i + 1
+                    }
+                }
+                None => 0,
+            };
+
+            state.select(Some(i));
+        }
+    }
+
+    fn previous(&self) {
+        let items = self.lock_items();
+        let mut state = self.lock_state();
+        if items.len() > 0 {
+            let i = match state.selected() {
+                Some(i) => {
+                    if i == 0 {
+                        items.len() - 1
+                    } else {
+                        i - 1
+                    }
+                }
+                None => 0,
+            };
+
+            state.select(Some(i));
+        }
+    }
+}
+
+impl<T: ASelectableFilenameList> SelectableContainer<String> for T {
+    fn select(&self, selection: State) {
+        let mut items = self.lock_items();
+        match self.get_current().selected() {
+            None => (),
+            Some(i) => {
+                if items.len() > i {
+                    match items[i].value().get_kind() {
+                        Kind::File => items[i].select(selection),
+                        Kind::Directory | Kind::Unknown => (),
+                    }
+                }
+            }
+        };
+    }
+
+    fn get_selected(&self, selection: State) -> Vec<String> {
+        self.lock_items()
+            .iter()
+            .filter(|i| *i.selected() == selection)
+            .map(|i| i.value().get_name().to_owned())
+            .collect()
+    }
+}
+
+pub trait Navigatable {
+    fn move_into_selected_dir(&self);
+    fn move_out_of_selected_dir(&self);
+    fn get_current_path(&self) -> String;
 }
 
 #[async_trait]
@@ -104,22 +236,42 @@ pub trait FileCRUD {
         stream: Pin<BoxedByteStream>,
     ) -> Result<(), ComponentError>;
     async fn delete_file(&self, file_name: &str) -> Result<(), ComponentError>;
-    fn move_into_selected_dir(&self);
-    fn move_out_of_selected_dir(&self);
-    fn get_current_path(&self) -> String;
     fn get_resource_name(&self) -> &str;
+    fn get_provider_name(&self) -> &str;
 }
 
 pub trait TuiListDisplay {
     fn make_file_list(&self, is_focused: bool) -> List;
 }
 
+impl<T: ASelectableFilenameList + FileCRUD + Navigatable> TuiListDisplay for T {
+    fn make_file_list(&self, is_focused: bool) -> List {
+        let mut style = Style::default().fg(Color::White);
+        if is_focused {
+            style = style.fg(Color::LightBlue);
+        }
+        let block = Block::default()
+            .title(format!(
+                "{}@{}:{}",
+                self.get_resource_name(),
+                self.get_provider_name(),
+                self.get_current_path()
+            ))
+            .style(style)
+            .borders(Borders::ALL);
+        let items = transform_list(self.lock_items());
+        List::new(items)
+            .block(block)
+            .style(Style::default().fg(Color::White))
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+            .highlight_symbol("> ")
+    }
+}
+
 fn transform_list<'entry_life>(
-    options: Arc<Mutex<Vec<SelectableEntry<FilenameEntry>>>>,
+    options: MutexGuard<Vec<SelectableEntry<FilenameEntry>>>,
 ) -> Vec<ListItem<'entry_life>> {
     options
-        .lock()
-        .expect("Couldn't lock mutex")
         .iter()
         .map(|o| {
             let mut text = o.value().get_name().to_owned();
@@ -153,12 +305,11 @@ fn transform_list<'entry_life>(
         })
         .collect()
 }
-
-pub trait FileList:
-    StatefulContainer + SelectableContainer<String> + FileCRUD + TuiListDisplay
+pub trait FileCRUDListWidget:
+    ASelectableFilenameList + Navigatable + FileCRUD + TuiListDisplay
 {
 }
-impl<T> FileList for T where
-    T: StatefulContainer + SelectableContainer<String> + FileCRUD + TuiListDisplay
+impl<T: ASelectableFilenameList + Navigatable + FileCRUD + TuiListDisplay> FileCRUDListWidget
+    for T
 {
 }

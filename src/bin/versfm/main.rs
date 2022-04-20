@@ -11,7 +11,7 @@ use std::{
 };
 use tui::{backend::CrosstermBackend, Terminal};
 use versfm::{
-    components::{FileList, FilesystemList, S3List},
+    components::{FileCRUDListWidget, FilesystemList, S3List},
     providers::s3::S3Provider,
     screens::DualPaneList,
 };
@@ -68,9 +68,9 @@ fn capture_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>, Box<dyn Erro
 pub async fn run(bucket_name: &str) -> Result<(), Box<dyn Error>> {
     let input_channel = spawn_sender();
     let terminal = capture_terminal().expect("Coudn't capture terminal");
-    let s3_client: Box<dyn FileList + Sync + Send> =
+    let s3_client: Box<dyn FileCRUDListWidget> =
         Box::new(S3List::new(S3Provider::new(bucket_name).await));
-    let fs_client: Box<dyn FileList + Sync + Send> = Box::new(FilesystemList::new());
+    let fs_client: Box<dyn FileCRUDListWidget> = Box::new(FilesystemList::new());
     let mut main_screen = DualPaneList::new(terminal, s3_client, fs_client).await;
 
     loop {

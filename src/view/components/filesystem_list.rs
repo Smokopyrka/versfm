@@ -1,30 +1,23 @@
-extern crate versfm_derive;
-
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use async_trait::async_trait;
-use tui::{
-    style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListState},
-};
-use versfm_derive::StatefulContainer;
+use tui::widgets::ListState;
 
 use crate::{
-    providers::{filesystem, Kind},
+    providers::filesystem,
     utils::{append_path_to_dir, split_path_into_dir_and_filename},
 };
 
 use super::{
-    err::ComponentError, BoxedByteStream, FileCRUD, FilenameEntry, SelectableContainer,
-    SelectableEntry, State, StatefulContainer, TuiListDisplay,
+    err::ComponentError, ASelectableFilenameList, BoxedByteStream, FileCRUD, FilenameEntry,
+    Navigatable, SelectableEntry, State, StatefulContainer,
 };
 
-#[derive(StatefulContainer)]
 pub struct FilesystemList {
     user: String,
     curr_path: Arc<Mutex<PathBuf>>,
@@ -41,81 +34,6 @@ impl FilesystemList {
             items: Arc::new(Mutex::new(Vec::new())),
             state: Arc::new(Mutex::new(ListState::default())),
         }
-    }
-
-    fn set_item_state(&self, file_name: &str, state: State) {
-        let mut items = self.items.lock().expect("Couldn't lock mutex");
-        if let Some(item) = items.iter_mut().find(|v| v.value().get_name() == file_name) {
-            item.select(state);
-        }
-    }
-
-    fn remove_element_of_filename(&self, file_name: &str) {
-        let mut items = self.items.lock().expect("Couldn't lock mutex");
-        if let Some((element_index, _)) = items
-            .iter()
-            .enumerate()
-            .find(|(_, v)| v.value().get_name() == file_name)
-        {
-            let mut state = self.state.lock().expect("Couldn't lock mutex");
-            items.remove(element_index);
-            // Modifies state to compensate for now removed item
-            if let Some(selected) = state.selected() {
-                if element_index < selected {
-                    state.select(Some(selected - 1));
-                } else if element_index == selected {
-                    state.select(None);
-                }
-            }
-        }
-    }
-
-    fn add_new_element(&self, file_name: &str) {
-        let mut elements = self.items.lock().expect("Couldn't lock mutex");
-        elements.push(SelectableEntry::new(FilenameEntry {
-            file_name: file_name.to_owned(),
-            kind: Kind::File,
-        }));
-    }
-
-    fn get_name_of_selected(&self) -> Option<String> {
-        let items = self.items.lock().expect("Couldn't lock mutex");
-        let state = self.state.lock().expect("Couldn't lock mutex");
-        if let Some(i) = state.selected() {
-            return Some(
-                items
-                    .get(i)
-                    .expect("FilesystemList index out of range")
-                    .value()
-                    .get_name()
-                    .to_owned(),
-            );
-        }
-        None
-    }
-
-    fn get_prefix(&self) -> String {
-        self.curr_path
-            .lock()
-            .expect("Couldn't lock mutex")
-            .to_str()
-            .unwrap()
-            .to_owned()
-    }
-
-    fn get_list_entries(
-        path: &Path,
-    ) -> Result<Vec<SelectableEntry<FilenameEntry>>, ComponentError> {
-        Ok(filesystem::get_files_list(path)
-            .map_err(|e| Self::handle_error(e, Some(path.as_os_str().to_str().unwrap())))?
-            .into_iter()
-            .map(|i| {
-                SelectableEntry::new(FilenameEntry {
-                    file_name: i.name,
-                    kind: i.kind,
-                })
-            })
-            .collect())
     }
 
     fn handle_error(err: io::Error, file: Option<&str>) -> ComponentError {
@@ -143,41 +61,64 @@ impl FilesystemList {
     }
 }
 
-impl SelectableContainer<String> for FilesystemList {
-    fn select(&self, selection: State) {
-        let mut items = self.items.lock().expect("Couldn't lock mutex");
-        match self.get_current().selected() {
-            None => (),
-            Some(i) => {
-                if items.len() > i {
-                    match items[i].value().get_kind() {
-                        Kind::File => items[i].select(selection),
-                        Kind::Directory | Kind::Unknown => (),
-                    }
-                }
-            }
-        };
+impl ASelectableFilenameList for FilesystemList {
+    fn lock_items(&self) -> MutexGuard<Vec<SelectableEntry<FilenameEntry>>> {
+        self.items.lock().expect("Clouldn't lock items mutex")
+    }
+    fn lock_state(&self) -> MutexGuard<ListState> {
+        self.state.lock().expect("Clouldn't lock state mutex")
+    }
+}
+
+impl Navigatable for FilesystemList {
+    fn move_out_of_selected_dir(&self) {
+        let mut current = self.curr_path.lock().expect("Couldn't lock mutex");
+        if let Some(path) = current.parent() {
+            *current = path.to_path_buf();
+            self.clear_state();
+        }
     }
 
-    fn get_selected(&self, selection: State) -> Vec<String> {
-        self.items
+    fn move_into_selected_dir(&self) {
+        let mut curr_path = self.curr_path.lock().expect("Couldn't lock mutex");
+        let current = curr_path.to_str().unwrap();
+        if let Some(selected) = self.get_name_of_selected() {
+            let path = append_path_to_dir(current, &selected);
+            let path = Path::new(&path);
+            let metadata = fs::metadata(path);
+            if metadata.is_ok() && metadata.unwrap().is_dir() {
+                *curr_path = path.to_path_buf();
+            }
+            self.clear_state();
+        }
+    }
+
+    fn get_current_path(&self) -> String {
+        self.curr_path
             .lock()
-            .expect("Coldn't lock mutex")
-            .iter()
-            .filter(|i| *i.selected() == selection)
-            .map(|i| i.value().get_name().to_owned())
-            .collect()
+            .expect("Couldn't lock mutex on current path")
+            .to_str()
+            .unwrap()
+            .to_owned()
     }
 }
 
 #[async_trait]
 impl FileCRUD for FilesystemList {
+    fn get_resource_name(&self) -> &str {
+        &self.user
+    }
+
+    fn get_provider_name(&self) -> &str {
+        "local"
+    }
+
     fn start_processing_item(&self, file_name: &str) {
-        self.set_item_state(file_name, State::Proccessed);
+        self.set_item_state_by_filename(file_name, State::Proccessed);
     }
 
     fn stop_processing_item(&self, file_name: &str) {
-        self.set_item_state(file_name, State::Unselected);
+        self.set_item_state_by_filename(file_name, State::Unselected);
     }
 
     async fn get_file_stream(&self, path: &str) -> Result<Pin<BoxedByteStream>, ComponentError> {
@@ -211,61 +152,18 @@ impl FileCRUD for FilesystemList {
     }
 
     async fn refresh(&self) -> Result<(), ComponentError> {
+        let path = &self.get_current_path();
         let mut items = self.items.lock().expect("Couldn't lock mutex");
-        *items = Self::get_list_entries(Path::new(&self.get_prefix()))?;
+        *items = filesystem::get_files_list(Path::new(path))
+            .map_err(|e| Self::handle_error(e, Some(path)))?
+            .into_iter()
+            .map(|i| {
+                SelectableEntry::new(FilenameEntry {
+                    file_name: i.name,
+                    kind: i.kind,
+                })
+            })
+            .collect();
         Ok(())
-    }
-
-    fn move_out_of_selected_dir(&self) {
-        let mut current = self.curr_path.lock().expect("Couldn't lock mutex");
-        if let Some(path) = current.parent() {
-            *current = path.to_path_buf();
-            self.clear_state();
-        }
-    }
-
-    fn move_into_selected_dir(&self) {
-        let mut curr_path = self.curr_path.lock().expect("Couldn't lock mutex");
-        let current = curr_path.to_str().unwrap();
-        if let Some(selected) = self.get_name_of_selected() {
-            let path = append_path_to_dir(current, &selected);
-            let path = Path::new(&path);
-            let metadata = fs::metadata(path);
-            if metadata.is_ok() && metadata.unwrap().is_dir() {
-                *curr_path = path.to_path_buf();
-            }
-            self.clear_state();
-        }
-    }
-
-    fn get_current_path(&self) -> String {
-        self.get_prefix()
-    }
-
-    fn get_resource_name(&self) -> &str {
-        &self.user
-    }
-}
-
-impl TuiListDisplay for FilesystemList {
-    fn make_file_list(&self, is_focused: bool) -> List {
-        let mut style = Style::default().fg(Color::White);
-        if is_focused {
-            style = style.fg(Color::LightBlue);
-        }
-        let block = Block::default()
-            .title(format!(
-                "{}@local:{}",
-                self.get_resource_name(),
-                self.get_current_path()
-            ))
-            .style(style)
-            .borders(Borders::ALL);
-        let items = super::transform_list(self.items.clone());
-        List::new(items)
-            .block(block)
-            .style(Style::default().fg(Color::White))
-            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-            .highlight_symbol("> ")
     }
 }
