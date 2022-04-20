@@ -59,6 +59,7 @@ impl<T> SelectableEntry<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct FilenameEntry {
     file_name: String,
     kind: Kind,
@@ -114,6 +115,14 @@ pub trait ASelectableFilenameList:
         }
     }
 
+    fn get_item_by_filename(&self, file_name: &str) -> Option<FilenameEntry> {
+        let mut items = self.lock_items();
+        if let Some(item) = items.iter_mut().find(|v| v.value().get_name() == file_name) {
+            return Some(item.value().clone());
+        }
+        None
+    }
+
     fn remove_element_of_filename(&self, file_name: &str) {
         let mut items = self.lock_items();
         let mut state = self.lock_state();
@@ -134,11 +143,13 @@ pub trait ASelectableFilenameList:
     }
 
     fn add_new_element(&self, file_name: &str) {
-        let mut items = self.lock_items();
-        items.push(SelectableEntry::new(FilenameEntry {
-            file_name: file_name.to_owned(),
-            kind: Kind::File,
-        }));
+        if self.get_item_by_filename(file_name).is_none() {
+            let mut items = self.lock_items();
+            items.push(SelectableEntry::new(FilenameEntry {
+                file_name: file_name.to_owned(),
+                kind: Kind::File,
+            }));
+        }
     }
 }
 
