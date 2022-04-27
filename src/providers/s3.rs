@@ -52,9 +52,7 @@ impl S3Provider {
         match err {
             RusotoError::Unknown(buf) => {
                 let text = buf.body_as_str();
-                let s3err: S3Error =
-                    quick_xml::de::from_str(text).expect("Couldn't parse XML into S3Error struct");
-                s3err
+                quick_xml::de::from_str(text).expect("Couldn't parse XML into S3Error struct")
             }
             RusotoError::HttpDispatch(err) => S3Error {
                 code: String::from("Request Error"),
@@ -83,7 +81,7 @@ impl S3Provider {
         S3Provider {
             bucket_name: bucket_name.to_owned(),
             s3_client: S3Client::new_with(
-                HttpClient::new().unwrap(),
+                HttpClient::new().expect("Couldn't create HTTP client"),
                 ProfileProvider::new()
                     .expect("Please provide your aws credentials in the .aws file"),
                 Region::EuCentral1,
@@ -92,9 +90,9 @@ impl S3Provider {
     }
 
     pub async fn list_objects(&self, prefix: &str) -> Result<Vec<S3Object>, S3Error> {
-        let mut prefix = prefix.to_owned();
         let mut request = ListObjectsV2Request::default();
         request.bucket = self.bucket_name.clone();
+        let mut prefix = prefix.to_owned();
         request.prefix = if prefix.is_empty() {
             None
         } else {
@@ -109,7 +107,7 @@ impl S3Provider {
         let result = response
             .into_iter()
             .filter(|i| {
-                let key = i.key.to_owned().unwrap();
+                let key = i.key.to_owned().expect("Couldn't obrain S3 object key");
                 let (prefix, file_name) = key.split_at(prefix.len());
                 // Ensures function returns only top-level files and directories
                 // for given prefix. (entries like foo/bar.txt are ommited)
@@ -120,7 +118,7 @@ impl S3Provider {
                     },
                     (_, "") => false,
                     (_, name) => {
-                        let last_char = name.chars().last().unwrap();
+                        let last_char = name.chars().last().expect("Name is empty");
                         let seperator_count = name.matches('/').count();
                         seperator_count == 0 || (seperator_count == 1 && last_char == '/')
                     }
@@ -158,7 +156,7 @@ impl S3Provider {
 
     pub async fn download_object(&self, object_name: &str) -> Result<ByteStream, S3Error> {
         let object: GetObjectOutput = self.get_object(object_name).await?;
-        Ok(object.body.unwrap())
+        Ok(object.body.expect("Couldn't get object body"))
     }
 
     async fn get_object(&self, object_name: &str) -> Result<GetObjectOutput, S3Error> {
