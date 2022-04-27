@@ -289,7 +289,7 @@ fn transform_list(options: MutexGuard<Vec<SelectableEntry<FilenameEntry>>>) -> V
 
             match o.value().kind() {
                 Kind::Directory => style = style.add_modifier(Modifier::ITALIC),
-                Kind::Unknown => style = style.fg(Color::Gray),
+                Kind::Unknown => style = style.fg(Color::DarkGray),
                 _ => (),
             };
             match o.selected() {
