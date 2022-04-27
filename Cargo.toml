@@ -10,6 +10,7 @@ edition = "2021"
 
 [dependencies]
 tui = "0.17.0"
+clap = { version = "3.1.10", features = ["derive"]}
 whoami = "1.2.1"
 crossterm = "0.23.0"
 quick-xml = { version = "0.22.0", features = ["serialize"] }

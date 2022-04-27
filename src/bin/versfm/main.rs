@@ -1,9 +1,9 @@
+use clap::Parser;
 use crossterm::{
     event::{self, Event as CEvent, KeyCode, KeyEvent},
     terminal::enable_raw_mode,
 };
-use std::env;
-use std::error::Error;
+use std::{error::Error, process};
 use std::{
     io::{self, Stdout},
     sync::mpsc::{self, Receiver},
@@ -65,14 +65,34 @@ fn capture_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>, Box<dyn Erro
     Ok(terminal)
 }
 
-pub async fn run(bucket_name: &str) -> Result<(), Box<dyn Error>> {
-    let input_channel = spawn_sender();
-    let terminal = capture_terminal().expect("Coudn't capture terminal");
-    let s3_client: Box<dyn FileCRUDListWidget> =
-        Box::new(S3List::new(S3Provider::new(bucket_name).await));
-    let fs_client: Box<dyn FileCRUDListWidget> = Box::new(FilesystemList::new());
-    let mut main_screen = DualPaneList::new(terminal, s3_client, fs_client).await;
+async fn get_pane(pane_str: &str) -> Box<dyn FileCRUDListWidget> {
+    match pane_str {
+        "s3" => {
+            let s3_args = Args::parse();
+            if let Some(bucket_name) = s3_args.bucket_name {
+                Box::new(S3List::new(S3Provider::new(&bucket_name).await))
+            } else {
+                println!("Error: Please provide the name of the bucket you want to connect to");
+                process::exit(1);
+            }
+        }
+        "fs" => Box::new(FilesystemList::new()),
+        _ => {
+            println!("Error: Please provide a valid provider");
+            process::exit(1);
+        }
+    }
+}
 
+pub async fn run() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+    let left_pane = get_pane(&args.left_pane).await;
+    let right_pane = get_pane(&args.right_pane).await;
+
+    let terminal = capture_terminal().expect("Coudn't capture terminal");
+    let mut main_screen = DualPaneList::new(terminal, left_pane, right_pane).await;
+
+    let input_channel = spawn_sender();
     loop {
         match input_channel.recv().unwrap() {
             Event::Input(event) => main_screen.handle_event(event).await,
@@ -88,13 +108,23 @@ pub async fn run(bucket_name: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// VersFM - A versatile file manager written in Rust
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about=None)]
+struct Args {
+    /// Provider for the right pane
+    #[clap(long, short, default_value = "fs")]
+    left_pane: String,
+    /// Provider for the right pane
+    #[clap(long, short, default_value = "fs")]
+    right_pane: String,
+    /// Name of the bucket you want to connect to
+    #[clap(long)]
+    bucket_name: Option<String>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = env::args().collect();
-    match &args.get(1) {
-        Some(v) => run(v).await,
-        None => Ok(println!(
-            "ERROR: Please provide the name of the bucket you want to access"
-        )),
-    }
+    run().await?;
+    Ok(())
 }
