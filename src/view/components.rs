@@ -66,11 +66,11 @@ pub struct FilenameEntry {
 }
 
 impl FilenameEntry {
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.file_name
     }
 
-    pub fn get_kind(&self) -> &Kind {
+    pub fn kind(&self) -> &Kind {
         &self.kind
     }
 }
@@ -92,6 +92,7 @@ pub trait ASelectableFilenameList:
 {
     fn lock_items(&self) -> MutexGuard<Vec<SelectableEntry<FilenameEntry>>>;
     fn lock_state(&self) -> MutexGuard<ListState>;
+
     fn get_name_of_selected(&self) -> Option<String> {
         let items = self.lock_items();
         let state = self.lock_state();
@@ -101,7 +102,7 @@ pub trait ASelectableFilenameList:
                     .get(i)
                     .expect("SelectableFilenameList index out of range")
                     .value()
-                    .get_name()
+                    .name()
                     .to_owned(),
             );
         }
@@ -110,14 +111,14 @@ pub trait ASelectableFilenameList:
 
     fn set_item_state_by_filename(&self, file_name: &str, state: State) {
         let mut items = self.lock_items();
-        if let Some(item) = items.iter_mut().find(|v| v.value().get_name() == file_name) {
+        if let Some(item) = items.iter_mut().find(|v| v.value().name() == file_name) {
             item.select(state);
         }
     }
 
     fn get_item_by_filename(&self, file_name: &str) -> Option<FilenameEntry> {
         let mut items = self.lock_items();
-        if let Some(item) = items.iter_mut().find(|v| v.value().get_name() == file_name) {
+        if let Some(item) = items.iter_mut().find(|v| v.value().name() == file_name) {
             return Some(item.value().clone());
         }
         None
@@ -129,7 +130,7 @@ pub trait ASelectableFilenameList:
         if let Some((element_index, _)) = items
             .iter()
             .enumerate()
-            .find(|(_, v)| v.value().get_name() == file_name)
+            .find(|(_, v)| v.value().name() == file_name)
         {
             items.remove(element_index);
             if let Some(selected) = state.selected() {
@@ -208,7 +209,7 @@ impl<T: ASelectableFilenameList> SelectableContainer<String> for T {
             None => (),
             Some(i) => {
                 if items.len() > i {
-                    match items[i].value().get_kind() {
+                    match items[i].value().kind() {
                         Kind::File => items[i].select(selection),
                         Kind::Directory | Kind::Unknown => (),
                     }
@@ -221,7 +222,7 @@ impl<T: ASelectableFilenameList> SelectableContainer<String> for T {
         self.lock_items()
             .iter()
             .filter(|i| *i.selected() == selection)
-            .map(|i| i.value().get_name().to_owned())
+            .map(|i| i.value().name().to_owned())
             .collect()
     }
 }
@@ -285,10 +286,10 @@ fn transform_list<'entry_life>(
     options
         .iter()
         .map(|o| {
-            let mut text = o.value().get_name().to_owned();
+            let mut text = o.value().name().to_owned();
             let mut style = Style::default();
 
-            match o.value().get_kind() {
+            match o.value().kind() {
                 Kind::Directory => style = style.add_modifier(Modifier::ITALIC),
                 Kind::Unknown => style = style.fg(Color::Gray),
                 _ => (),
