@@ -280,9 +280,7 @@ impl<T: ASelectableFilenameList + FileCRUD + Navigatable> TuiListDisplay for T {
     }
 }
 
-fn transform_list<'entry_life>(
-    options: MutexGuard<Vec<SelectableEntry<FilenameEntry>>>,
-) -> Vec<ListItem<'entry_life>> {
+fn transform_list(options: MutexGuard<Vec<SelectableEntry<FilenameEntry>>>) -> Vec<ListItem> {
     options
         .iter()
         .map(|o| {
