@@ -27,7 +27,10 @@ pub struct FileBytesStream {
 
 impl FileBytesStream {
     pub fn new(file: File) -> FileBytesStream {
-        let file_len = file.metadata().unwrap().len() as usize;
+        let file_len = file
+            .metadata()
+            .expect("Couldn't obtain file metadata, possible permissions issue")
+            .len() as usize;
         FileBytesStream {
             reader: BufReader::new(file),
             size: file_len,
@@ -70,7 +73,7 @@ pub fn get_files_list(path: &Path) -> Result<Vec<FilesystemObject>, io::Error> {
                 let path = f.unwrap().path();
                 let mut file_name = path
                     .file_name()
-                    .unwrap()
+                    .expect("Couldn't obtain file_name from given path")
                     .to_str()
                     .expect("Cannot convert non-utf8 filename to string")
                     .to_owned();
@@ -116,7 +119,7 @@ pub async fn write_file_from_stream(
     let mut writer = BufWriter::new(File::create(path)?);
     let mut stream = Box::pin(stream);
     while let Some(chunk) = stream.next().await {
-        if let Err(err) = writer.write(chunk.unwrap().borrow()) {
+        if let Err(err) = writer.write(chunk.expect("Couldn't obtain chunk for writing").borrow()) {
             match err.kind() {
                 io::ErrorKind::Interrupted => continue,
                 _ => return Err(err),
