@@ -6,9 +6,8 @@ use crossterm::{
 use std::{
     error::Error,
     io::Stdout,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
-use tokio::join;
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -75,19 +74,22 @@ impl DualPaneList {
         }
     }
 
+    fn lock_err_stack(&self) -> MutexGuard<Vec<ComponentError>> {
+        self.err_stack
+            .lock()
+            .expect("Couldn't lock err_stack mutex")
+    }
+
     fn handle_err(&self, e: ComponentError) {
-        self.err_stack.lock().expect("Couldn't lock mutex").push(e);
+        self.lock_err_stack().push(e);
     }
 
     fn err_stack_empty(&self) -> bool {
-        self.err_stack
-            .lock()
-            .expect("Couldn't lock mutex")
-            .is_empty()
+        self.lock_err_stack().is_empty()
     }
 
     fn err_stack_clear(&self) {
-        self.err_stack.lock().expect("Couldn't lock mutex").clear()
+        self.lock_err_stack().clear()
     }
 
     pub async fn handle_event(&mut self, event: KeyEvent) {
@@ -96,10 +98,9 @@ impl DualPaneList {
         match event.code {
             KeyCode::Enter => {
                 if self.err_stack_empty() {
-                    let move_ft = self.move_items();
-                    let copy_ft = self.copy_items();
-                    let delete_ft = self.delete_items();
-                    join!(move_ft, copy_ft, delete_ft);
+                    self.move_items();
+                    self.copy_items();
+                    self.delete_items();
                 } else {
                     self.err_stack_clear();
                 }
@@ -108,14 +109,14 @@ impl DualPaneList {
                 curr_list.move_into_selected_dir();
                 if let Err(e) = curr_list.refresh().await {
                     curr_list.move_out_of_selected_dir();
-                    self.err_stack.lock().expect("Clouldn't lock mutex").push(e);
+                    self.handle_err(e);
                 }
             }
             KeyCode::Backspace => {
                 curr_list.move_out_of_selected_dir();
                 if let Err(e) = curr_list.refresh().await {
                     curr_list.move_into_selected_dir();
-                    self.err_stack.lock().expect("Clouldn't lock mutex").push(e);
+                    self.handle_err(e);
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => curr_list.next(),
@@ -141,107 +142,125 @@ impl DualPaneList {
             .unwrap_or_else(|e| self.handle_err(e));
     }
 
-    async fn copy_items(&self) {
-        self.copy_from_to(self.right_pane.clone(), self.left_pane.clone())
-            .await
-            .unwrap_or_else(|e| self.handle_err(e));
-        self.copy_from_to(self.left_pane.clone(), self.right_pane.clone())
-            .await
-            .unwrap_or_else(|e| self.handle_err(e));
+    fn copy_items(&self) {
+        self.copy_from_to(self.right_pane.clone(), self.left_pane.clone());
+        self.copy_from_to(self.left_pane.clone(), self.right_pane.clone());
     }
 
-    async fn copy_from_to(
-        &self,
-        from: Arc<Box<dyn FileCRUDListWidget>>,
-        to: Arc<Box<dyn FileCRUDListWidget>>,
-    ) -> Result<(), ComponentError> {
-        let from_prefix = from.get_current_path();
-        let to_prefix = to.get_current_path();
-        for selected in from.get_selected(State::ToCopy) {
-            let err_stack = self.err_stack.clone();
-            let from = from.clone();
-            let to = to.clone();
-            let from_path = append_path_to_dir(&from_prefix, &selected);
-            let to_path = append_path_to_dir(&to_prefix, &selected);
-            tokio::spawn(async move {
-                match from.get_file_stream(&from_path).await {
-                    Err(e) => err_stack.lock().expect("Couldn't lock mutex").push(e),
-                    Ok(file) => {
-                        from.start_processing_item(&selected);
-                        to.put_file(&to_path, file).await.unwrap_or_else(|e| {
-                            err_stack.lock().expect("Couldn't lock mutex").push(e)
-                        });
-                        from.stop_processing_item(&selected);
-                    }
-                }
-            });
-        }
-        Ok(())
-    }
-
-    async fn delete_items(&self) {
-        self.delete_from(self.left_pane.clone())
-            .await
-            .unwrap_or_else(|e| self.handle_err(e));
-        self.delete_from(self.right_pane.clone())
-            .await
-            .unwrap_or_else(|e| self.handle_err(e));
-    }
-
-    async fn delete_from(
-        &self,
-        from: Arc<Box<dyn FileCRUDListWidget>>,
-    ) -> Result<(), ComponentError> {
-        let from_prefix = from.get_current_path();
-        for selected in from.get_selected(State::ToDelete) {
-            let err_stack = self.err_stack.clone();
-            let from = from.clone();
-            let from_path = append_path_to_dir(&from_prefix, &selected);
-            tokio::spawn(async move {
-                from.start_processing_item(&selected);
-                from.delete_file(&from_path)
-                    .await
-                    .unwrap_or_else(|e| err_stack.lock().expect("Couldn't lock mutex").push(e));
-            });
-        }
-        Ok(())
-    }
-
-    async fn move_items(&self) {
-        self.move_from_to(self.right_pane.clone(), self.left_pane.clone())
-            .await;
-        self.move_from_to(self.left_pane.clone(), self.right_pane.clone())
-            .await;
-    }
-
-    async fn move_from_to(
+    fn copy_from_to(
         &self,
         from: Arc<Box<dyn FileCRUDListWidget>>,
         to: Arc<Box<dyn FileCRUDListWidget>>,
     ) {
-        let from_prefix = from.get_current_path();
-        let to_prefix = to.get_current_path();
+        for selected in from.get_selected(State::ToCopy) {
+            self.spawn_copy_task(from.clone(), to.clone(), selected.to_owned());
+        }
+    }
+
+    fn spawn_copy_task(
+        &self,
+        from: Arc<Box<dyn FileCRUDListWidget>>,
+        to: Arc<Box<dyn FileCRUDListWidget>>,
+        file_name: String,
+    ) {
+        let err_stack = self.err_stack.clone();
+
+        let from_path = append_path_to_dir(&from.get_current_path(), &file_name);
+        let to_path = append_path_to_dir(&to.get_current_path(), &file_name);
+        tokio::spawn(async move {
+            match from.get_file_stream(&from_path).await {
+                Err(e) => err_stack
+                    .lock()
+                    .expect("Couldn't lock err_stack mutex")
+                    .push(e),
+                Ok(file) => {
+                    from.start_processing_item(&file_name);
+                    to.put_file(&to_path, file).await.unwrap_or_else(|e| {
+                        err_stack
+                            .lock()
+                            .expect("Couldn't lock err_stack mutex")
+                            .push(e)
+                    });
+                    from.stop_processing_item(&file_name);
+                }
+            }
+        });
+    }
+
+    fn delete_items(&self) {
+        self.delete_from(self.left_pane.clone());
+        self.delete_from(self.right_pane.clone());
+    }
+
+    fn delete_from(&self, from: Arc<Box<dyn FileCRUDListWidget>>) {
+        for selected in from.get_selected(State::ToDelete) {
+            self.spawn_delete_task(from.clone(), selected.to_owned());
+        }
+    }
+
+    fn spawn_delete_task(&self, from: Arc<Box<dyn FileCRUDListWidget>>, file_name: String) {
+        let err_stack = self.err_stack.clone();
+
+        let from_path = append_path_to_dir(&from.get_current_path(), &file_name);
+        tokio::spawn(async move {
+            from.start_processing_item(&file_name);
+            from.delete_file(&from_path).await.unwrap_or_else(|e| {
+                err_stack
+                    .lock()
+                    .expect("Couldn't lock err_stack mutex")
+                    .push(e)
+            });
+        });
+    }
+
+    fn move_items(&self) {
+        self.move_from_to(self.right_pane.clone(), self.left_pane.clone());
+        self.move_from_to(self.left_pane.clone(), self.right_pane.clone());
+    }
+
+    fn move_from_to(
+        &self,
+        from: Arc<Box<dyn FileCRUDListWidget>>,
+        to: Arc<Box<dyn FileCRUDListWidget>>,
+    ) {
         for selected in from.get_selected(State::ToMove) {
-            let err_stack = self.err_stack.clone();
             let from = from.clone();
             let to = to.clone();
-            let from_path = append_path_to_dir(&from_prefix, &selected);
-            let to_path = append_path_to_dir(&to_prefix, &selected);
-            tokio::spawn(async move {
-                match from.get_file_stream(&from_path).await {
-                    Ok(file) => {
-                        from.start_processing_item(&selected);
-                        to.put_file(&to_path, file)
-                            .await
-                            .unwrap_or_else(|e| err_stack.lock().unwrap().push(e));
-                        from.delete_file(&from_path)
-                            .await
-                            .unwrap_or_else(|e| err_stack.lock().unwrap().push(e));
-                    }
-                    Err(e) => err_stack.lock().unwrap().push(e),
-                }
-            });
+            self.spawn_move_task(from, to, selected.to_owned());
         }
+    }
+
+    fn spawn_move_task(
+        &self,
+        from: Arc<Box<dyn FileCRUDListWidget>>,
+        to: Arc<Box<dyn FileCRUDListWidget>>,
+        file_name: String,
+    ) {
+        let err_stack = self.err_stack.clone();
+
+        let from_path = append_path_to_dir(&from.get_current_path(), &file_name);
+        let to_path = append_path_to_dir(&to.get_current_path(), &file_name);
+
+        tokio::spawn(async move {
+            match from.get_file_stream(&from_path).await {
+                Ok(file) => {
+                    from.start_processing_item(&file_name);
+                    to.put_file(&to_path, file).await.unwrap_or_else(|e| {
+                        err_stack
+                            .lock()
+                            .expect("Couldn't lock err_stack mutex")
+                            .push(e)
+                    });
+                    from.delete_file(&from_path).await.unwrap_or_else(|e| {
+                        err_stack
+                            .lock()
+                            .expect("Couldn't lock err_stack mutex")
+                            .push(e)
+                    });
+                }
+                Err(e) => err_stack.lock().unwrap().push(e),
+            }
+        });
     }
 
     fn get_curr_list(&mut self) -> Arc<Box<dyn FileCRUDListWidget>> {
