@@ -120,13 +120,13 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about=None)]
 struct Args {
-    /// Provider for the right pane [Options: "fs", "s3"]
+    /// Provider for the left pane [Options: "fs", "s3"]
     #[clap(long, short, default_value = "fs")]
     left_pane: String,
     /// Provider for the right pane [Options: "fs", "s3"]
     #[clap(long, short, default_value = "fs")]
     right_pane: String,
-    /// Name of the aws region your bucket is localized
+    /// Name of the aws region your bucket is localized in
     #[clap(long)]
     aws_region: Option<String>,
     /// Name of the bucket you want to connect to
