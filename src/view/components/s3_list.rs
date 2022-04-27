@@ -34,6 +34,12 @@ impl S3List {
         }
     }
 
+    fn lock_s3_prefix(&self) -> MutexGuard<String> {
+        self.s3_prefix
+            .lock()
+            .expect("Couldn't lock s3_prefix mutex")
+    }
+
     fn handle_err(err: S3Error, file: Option<&str>) -> ComponentError {
         ComponentError::new(
             String::from("S3"),
@@ -64,7 +70,7 @@ impl Navigatable for S3List {
             }
             // Removes last '/' from directory name
             dir.pop();
-            let mut s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
+            let mut s3_prefix = self.lock_s3_prefix();
             let new_prefix = append_path_to_dir(&s3_prefix, &dir);
             // [1..] is used here to remove the trailing '/' from the new_prefix
             *s3_prefix = new_prefix[1..].to_owned();
@@ -73,7 +79,7 @@ impl Navigatable for S3List {
     }
 
     fn move_out_of_selected_dir(&self) {
-        let mut s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
+        let mut s3_prefix = self.lock_s3_prefix();
         if !s3_prefix.is_empty() {
             *s3_prefix = s3_prefix
                 .rmatch_indices('/')
@@ -85,10 +91,7 @@ impl Navigatable for S3List {
     }
 
     fn get_current_path(&self) -> String {
-        self.s3_prefix
-            .lock()
-            .expect("Couldn't lock mutex")
-            .to_owned()
+        self.lock_s3_prefix().to_owned()
     }
 }
 
@@ -160,7 +163,7 @@ impl FileCRUD for S3List {
             .list_objects(&path)
             .await
             .map_err(|e| Self::handle_err(e, Some(&self.get_current_path())))?;
-        let mut items = self.items.lock().expect("Could not lock mutex");
+        let mut items = self.lock_items();
         *items = files
             .into_iter()
             .map(|i| {

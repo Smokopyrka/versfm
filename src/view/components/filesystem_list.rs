@@ -36,6 +36,12 @@ impl FilesystemList {
         }
     }
 
+    fn lock_curr_path(&self) -> MutexGuard<PathBuf> {
+        self.curr_path
+            .lock()
+            .expect("Clouldn't lock curr_path mutex")
+    }
+
     fn handle_error(err: io::Error, file: Option<&str>) -> ComponentError {
         let message = match err.kind() {
             io::ErrorKind::NotFound => "File couldn't be found",
@@ -65,6 +71,7 @@ impl ASelectableFilenameList for FilesystemList {
     fn lock_items(&self) -> MutexGuard<Vec<SelectableEntry<FilenameEntry>>> {
         self.items.lock().expect("Clouldn't lock items mutex")
     }
+
     fn lock_state(&self) -> MutexGuard<ListState> {
         self.state.lock().expect("Clouldn't lock state mutex")
     }
@@ -72,7 +79,7 @@ impl ASelectableFilenameList for FilesystemList {
 
 impl Navigatable for FilesystemList {
     fn move_out_of_selected_dir(&self) {
-        let mut curr_path = self.curr_path.lock().expect("Couldn't lock mutex");
+        let mut curr_path = self.lock_curr_path();
         if let Some(parent_path) = curr_path.parent() {
             *curr_path = parent_path.to_path_buf();
             self.clear_state();
@@ -80,7 +87,7 @@ impl Navigatable for FilesystemList {
     }
 
     fn move_into_selected_dir(&self) {
-        let mut curr_path = self.curr_path.lock().expect("Couldn't lock mutex");
+        let mut curr_path = self.lock_curr_path();
         let curr_path_str = curr_path
             .to_str()
             .expect("Couldn't convert current path to string");
@@ -96,12 +103,7 @@ impl Navigatable for FilesystemList {
     }
 
     fn get_current_path(&self) -> String {
-        self.curr_path
-            .lock()
-            .expect("Couldn't lock mutex on current path")
-            .to_str()
-            .unwrap()
-            .to_owned()
+        self.lock_curr_path().to_str().unwrap().to_owned()
     }
 }
 
@@ -139,7 +141,7 @@ impl FileCRUD for FilesystemList {
             .await
             .map_err(|e| Self::handle_error(e, Some(path)))?;
         let (dir, file_name) = split_path_into_dir_and_filename(&path);
-        let curr_path = self.curr_path.lock().expect("Couldn't lock mutex");
+        let curr_path = self.lock_curr_path();
         if curr_path
             .to_str()
             .expect("Couldn't convert current path to string")
@@ -159,7 +161,7 @@ impl FileCRUD for FilesystemList {
 
     async fn refresh(&self) -> Result<(), ComponentError> {
         let path = &self.get_current_path();
-        let mut items = self.items.lock().expect("Couldn't lock mutex");
+        let mut items = self.lock_items();
         *items = filesystem::get_files_list(Path::new(path))
             .map_err(|e| Self::handle_error(e, Some(path)))?
             .into_iter()
