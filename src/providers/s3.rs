@@ -77,14 +77,14 @@ impl S3Provider {
         }
     }
 
-    pub async fn new(bucket_name: &str) -> S3Provider {
+    pub async fn new(bucket_name: &str, region: Region) -> S3Provider {
         S3Provider {
             bucket_name: bucket_name.to_owned(),
             s3_client: S3Client::new_with(
                 HttpClient::new().expect("Couldn't create HTTP client"),
                 ProfileProvider::new()
                     .expect("Please provide your aws credentials in the .aws file"),
-                Region::EuCentral1,
+                region,
             ),
         }
     }

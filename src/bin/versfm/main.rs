@@ -3,7 +3,8 @@ use crossterm::{
     event::{self, Event as CEvent, KeyCode, KeyEvent},
     terminal::enable_raw_mode,
 };
-use std::{error::Error, process};
+use rusoto_core::Region;
+use std::{error::Error, process, str::FromStr};
 use std::{
     io::{self, Stdout},
     sync::mpsc::{self, Receiver},
@@ -39,6 +40,7 @@ fn spawn_sender() -> Receiver<Event<KeyEvent>> {
                     if key.code == KeyCode::Esc {
                         tx.send(Event::Shutdown)
                             .expect("Couldn't send shutdown event");
+                        break;
                     } else {
                         tx.send(Event::Input(key))
                             .expect("Couldn't send user input event");
@@ -69,10 +71,16 @@ async fn get_pane(pane_str: &str) -> Box<dyn FileCRUDListWidget> {
     match pane_str {
         "s3" => {
             let s3_args = Args::parse();
-            if let Some(bucket_name) = s3_args.bucket_name {
-                Box::new(S3List::new(S3Provider::new(&bucket_name).await))
+            if s3_args.aws_region.is_none() || s3_args.s3_bucket_name.is_none() {
+                println!("Error: Please provide a valid name of the bucket you want to connect to, and the region it is located in");
+                process::exit(1);
+            }
+            if let Ok(region) = Region::from_str(&s3_args.aws_region.unwrap()) {
+                Box::new(S3List::new(
+                    S3Provider::new(&s3_args.s3_bucket_name.unwrap(), region).await,
+                ))
             } else {
-                println!("Error: Please provide the name of the bucket you want to connect to");
+                println!("Error: Provided AWS region is incorrect");
                 process::exit(1);
             }
         }
@@ -112,15 +120,18 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about=None)]
 struct Args {
-    /// Provider for the right pane
+    /// Provider for the right pane [Options: "fs", "s3"]
     #[clap(long, short, default_value = "fs")]
     left_pane: String,
-    /// Provider for the right pane
+    /// Provider for the right pane [Options: "fs", "s3"]
     #[clap(long, short, default_value = "fs")]
     right_pane: String,
+    /// Name of the aws region your bucket is localized
+    #[clap(long)]
+    aws_region: Option<String>,
     /// Name of the bucket you want to connect to
     #[clap(long)]
-    bucket_name: Option<String>,
+    s3_bucket_name: Option<String>,
 }
 
 #[tokio::main]
