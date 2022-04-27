@@ -24,8 +24,6 @@ pub struct S3List {
     state: Arc<Mutex<ListState>>,
 }
 
-impl S3List {}
-
 impl S3List {
     pub fn new(client: S3Provider) -> S3List {
         S3List {
@@ -68,7 +66,7 @@ impl Navigatable for S3List {
             dir.pop();
             let mut s3_prefix = self.s3_prefix.lock().expect("Couldn't lock mutex");
             let new_prefix = append_path_to_dir(&s3_prefix, &dir);
-            // [1..] is used here to remove the trailing '/' from new_prefix
+            // [1..] is used here to remove the trailing '/' from the new_prefix
             *s3_prefix = new_prefix[1..].to_owned();
             self.clear_state();
         }
@@ -81,7 +79,7 @@ impl Navigatable for S3List {
                 .rmatch_indices('/')
                 .nth(0)
                 .map(|(i, _)| s3_prefix[..i].to_owned())
-                .unwrap_or(String::from(""));
+                .unwrap_or(String::new());
             self.clear_state();
         };
     }
