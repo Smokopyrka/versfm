@@ -27,7 +27,7 @@ pub struct FilesystemList {
 
 impl FilesystemList {
     pub fn new() -> FilesystemList {
-        let curr_path = env::current_dir().unwrap();
+        let curr_path = env::current_dir().expect("Couldn't obtain path of the current directory");
         FilesystemList {
             user: whoami::username(),
             curr_path: Arc::new(Mutex::new(curr_path)),
@@ -72,22 +72,24 @@ impl ASelectableFilenameList for FilesystemList {
 
 impl Navigatable for FilesystemList {
     fn move_out_of_selected_dir(&self) {
-        let mut current = self.curr_path.lock().expect("Couldn't lock mutex");
-        if let Some(path) = current.parent() {
-            *current = path.to_path_buf();
+        let mut curr_path = self.curr_path.lock().expect("Couldn't lock mutex");
+        if let Some(parent_path) = curr_path.parent() {
+            *curr_path = parent_path.to_path_buf();
             self.clear_state();
         }
     }
 
     fn move_into_selected_dir(&self) {
         let mut curr_path = self.curr_path.lock().expect("Couldn't lock mutex");
-        let current = curr_path.to_str().unwrap();
+        let curr_path_str = curr_path
+            .to_str()
+            .expect("Couldn't convert current path to string");
         if let Some(selected) = self.get_name_of_selected() {
-            let path = append_path_to_dir(current, &selected);
-            let path = Path::new(&path);
-            let metadata = fs::metadata(path);
+            let new_path = append_path_to_dir(curr_path_str, &selected);
+            let new_path = Path::new(&new_path);
+            let metadata = fs::metadata(new_path);
             if metadata.is_ok() && metadata.unwrap().is_dir() {
-                *curr_path = path.to_path_buf();
+                *curr_path = new_path.to_path_buf();
             }
             self.clear_state();
         }
@@ -138,7 +140,11 @@ impl FileCRUD for FilesystemList {
             .map_err(|e| Self::handle_error(e, Some(path)))?;
         let (dir, file_name) = split_path_into_dir_and_filename(&path);
         let curr_path = self.curr_path.lock().expect("Couldn't lock mutex");
-        if curr_path.to_str().unwrap() == dir {
+        if curr_path
+            .to_str()
+            .expect("Couldn't convert current path to string")
+            == dir
+        {
             self.add_new_element(file_name);
         }
         Ok(())
