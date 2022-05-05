@@ -20,6 +20,8 @@ use crate::{
     view::components::{err::ComponentError, FileCRUDListWidget, State},
 };
 
+/// Takes a list of ComponentErrors and creates a Vector of ListItems
+/// from it
 fn get_err_list<'err_stack_lif>(
     errs: Arc<Mutex<Vec<ComponentError>>>,
 ) -> Vec<ListItem<'err_stack_lif>> {
@@ -37,11 +39,14 @@ fn get_err_list<'err_stack_lif>(
         .collect()
 }
 
+/// Enum representing which list is currently under focus
 enum CurrentList {
     LeftList,
     RightList,
 }
 
+/// A view consisting of two lists of file entries that can be
+/// moved, copied, deleted between one another
 pub struct DualPaneList {
     term: Terminal<CrosstermBackend<Stdout>>,
     curr_list: CurrentList,
@@ -80,18 +85,22 @@ impl DualPaneList {
             .expect("Couldn't lock err_stack mutex")
     }
 
+    /// Handles given `ComponentError` by pushing it onto the error stack
     fn handle_err(&self, e: ComponentError) {
         self.lock_err_stack().push(e);
     }
 
+    /// Return `true` if the error stack is empty
     fn err_stack_empty(&self) -> bool {
         self.lock_err_stack().is_empty()
     }
 
+    /// Clears the error stack
     fn err_stack_clear(&self) {
         self.lock_err_stack().clear()
     }
 
+    /// Handles the event sent to the applications by the input thread
     pub async fn handle_event(&mut self, event: KeyEvent) {
         let curr_list = self.get_curr_list();
 
@@ -131,6 +140,7 @@ impl DualPaneList {
         }
     }
 
+    /// Refreshes both of the lists
     async fn refresh_lists(&mut self) {
         self.left_pane
             .refresh()
@@ -142,6 +152,7 @@ impl DualPaneList {
             .unwrap_or_else(|e| self.handle_err(e));
     }
 
+    /// Copies items between the lists
     fn copy_items(&self) {
         self.copy_from_to(self.right_pane.clone(), self.left_pane.clone());
         self.copy_from_to(self.left_pane.clone(), self.right_pane.clone());
@@ -157,6 +168,7 @@ impl DualPaneList {
         }
     }
 
+    /// Sprawns a copy task for given file
     fn spawn_copy_task(
         &self,
         from: Arc<Box<dyn FileCRUDListWidget>>,
@@ -187,6 +199,7 @@ impl DualPaneList {
         });
     }
 
+    /// Deletes selected items from both lists
     fn delete_items(&self) {
         self.delete_from(self.left_pane.clone());
         self.delete_from(self.right_pane.clone());
@@ -198,6 +211,7 @@ impl DualPaneList {
         }
     }
 
+    /// Spawns a delete task for given file
     fn spawn_delete_task(&self, from: Arc<Box<dyn FileCRUDListWidget>>, file_name: String) {
         let err_stack = self.err_stack.clone();
 
@@ -213,6 +227,7 @@ impl DualPaneList {
         });
     }
 
+    /// Moves items between lists
     fn move_items(&self) {
         self.move_from_to(self.right_pane.clone(), self.left_pane.clone());
         self.move_from_to(self.left_pane.clone(), self.right_pane.clone());
@@ -230,6 +245,7 @@ impl DualPaneList {
         }
     }
 
+    /// Spawn move task for the given file
     fn spawn_move_task(
         &self,
         from: Arc<Box<dyn FileCRUDListWidget>>,
@@ -263,6 +279,7 @@ impl DualPaneList {
         });
     }
 
+    /// Returns the list that is currently selected
     fn get_curr_list(&mut self) -> Arc<Box<dyn FileCRUDListWidget>> {
         match self.curr_list {
             CurrentList::LeftList => self.left_pane.clone(),
@@ -270,6 +287,7 @@ impl DualPaneList {
         }
     }
 
+    /// Shuts down this screen, releases the terminal etc.
     pub fn shutdown(&mut self) -> Result<(), Box<dyn Error>> {
         disable_raw_mode()?;
         execute!(
@@ -282,6 +300,7 @@ impl DualPaneList {
         Ok(())
     }
 
+    /// Renders this screen
     pub fn render(&mut self) -> Result<(), Box<dyn Error>> {
         let term_size = self.term.size().unwrap();
         if self.err_stack_empty() {
@@ -294,13 +313,13 @@ impl DualPaneList {
             self.term.draw(|f| {
                 f.render_stateful_widget(
                     self.left_pane
-                        .make_file_list(matches!(self.curr_list, CurrentList::LeftList)),
+                        .make_list(matches!(self.curr_list, CurrentList::LeftList)),
                     chunks[0],
                     &mut self.left_pane.get_current(),
                 );
                 f.render_stateful_widget(
                     self.right_pane
-                        .make_file_list(matches!(self.curr_list, CurrentList::RightList)),
+                        .make_list(matches!(self.curr_list, CurrentList::RightList)),
                     chunks[1],
                     &mut self.right_pane.get_current(),
                 );

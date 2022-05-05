@@ -1,3 +1,4 @@
+//! Module containing structs and functions used to communicate with AWS S3
 extern crate quick_xml;
 extern crate serde;
 
@@ -13,6 +14,8 @@ use serde::Deserialize;
 
 use super::Kind;
 
+/// Struct representing a deserialized XML error returned
+/// by S3
 #[derive(Debug, Deserialize)]
 pub struct S3Error {
     #[serde(rename = "Code", default)]
@@ -31,6 +34,7 @@ impl S3Error {
     }
 }
 
+/// Struct representing an S3 object
 #[derive(Clone)]
 pub struct S3Object {
     pub name: String,
@@ -42,12 +46,14 @@ pub struct S3Object {
     pub owner: Option<String>,
 }
 
+/// Provider for the S3 bucket integration.
 pub struct S3Provider {
     pub bucket_name: String,
     s3_client: S3Client,
 }
 
 impl S3Provider {
+    /// Maps provided RusotoError to an S3Error
     fn handle_error(err: RusotoError<impl Error>) -> S3Error {
         match err {
             RusotoError::Unknown(buf) => {
@@ -89,6 +95,11 @@ impl S3Provider {
         }
     }
 
+    /// Lists objects present in the S3 bucket, that contain a given prefix
+    ///
+    /// # Arguments
+    ///
+    /// * `prefix` - The prefix of the objects that should be obtained
     pub async fn list_objects(&self, prefix: &str) -> Result<Vec<S3Object>, S3Error> {
         let mut request = ListObjectsV2Request::default();
         request.bucket = self.bucket_name.clone();
@@ -154,6 +165,7 @@ impl S3Provider {
         Ok(result)
     }
 
+    /// Gets the file stream of an S3 object of provided name
     pub async fn download_object(&self, object_name: &str) -> Result<ByteStream, S3Error> {
         let object: GetObjectOutput = self.get_object(object_name).await?;
         Ok(object.body.expect("Couldn't get object body"))
@@ -171,6 +183,7 @@ impl S3Provider {
             .map_err(Self::handle_error)?)
     }
 
+    /// Deletes an S3 object of the provided name from the S3 bucket
     pub async fn delete_object(&self, object_name: &str) -> Result<(), S3Error> {
         let mut request = DeleteObjectRequest::default();
         request.bucket = self.bucket_name.clone();
@@ -182,6 +195,7 @@ impl S3Provider {
         Ok(())
     }
 
+    /// Saves a given object from the file stream to a given location
     pub async fn put_object(&self, object_name: &str, content: ByteStream) -> Result<(), S3Error> {
         let mut request = PutObjectRequest::default();
         request.bucket = self.bucket_name.clone();

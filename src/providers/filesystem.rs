@@ -1,3 +1,4 @@
+//! Module containing functions used to operate on the local filesystem
 use std::{
     self,
     borrow::Borrow,
@@ -13,6 +14,10 @@ use futures::{Stream, StreamExt};
 
 use super::{BoxedByteStream, Kind};
 
+/// Struct representing an entry in the local filesystem
+///
+/// It contains the name of the file, the directory it is located
+/// in and its kind (file, directory or undefined)
 #[derive(Clone)]
 pub struct FilesystemObject {
     pub name: String,
@@ -65,6 +70,7 @@ impl Stream for FileBytesStream {
     }
 }
 
+/// Gets the list of files present under the provided `path`
 pub fn get_files_list(path: &Path) -> Result<Vec<FilesystemObject>, io::Error> {
     if fs::metadata(path)?.is_dir() {
         return Ok(fs::read_dir(path)?
@@ -103,6 +109,11 @@ pub fn get_files_list(path: &Path) -> Result<Vec<FilesystemObject>, io::Error> {
     }
 }
 
+/// Retruns the file stream of a file with given path
+///
+/// # Arguments
+///
+/// * `path` - Path of the file of which the file stream should be obtained
 pub fn get_file_byte_stream(path: &Path) -> Result<FileBytesStream, io::Error> {
     let file = fs::OpenOptions::new()
         .read(true)
@@ -112,6 +123,12 @@ pub fn get_file_byte_stream(path: &Path) -> Result<FileBytesStream, io::Error> {
     Ok(FileBytesStream::new(file))
 }
 
+/// Writes a file to the local filesystem
+///
+/// # Arguments
+///
+/// * `path` - Path of the new file
+/// * `stream` - Stream from which the file data will be read
 pub async fn write_file_from_stream(
     path: &Path,
     stream: Pin<BoxedByteStream>,
@@ -129,6 +146,9 @@ pub async fn write_file_from_stream(
     Ok(())
 }
 
+/// Removes a file of the given path from the local filesystem
+///
+/// * `path` - Path to the file that should be deleted
 pub fn remove_file(path: &Path) -> Result<(), io::Error> {
     if fs::metadata(path)?.is_dir() {
         return Err(io::Error::new(

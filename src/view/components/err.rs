@@ -1,5 +1,7 @@
+//! Module that defines view errors
 use std::fmt::{self};
 
+/// Error struct used in components
 #[derive(Debug, Clone)]
 pub struct ComponentError {
     component: String,

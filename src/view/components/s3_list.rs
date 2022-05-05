@@ -17,6 +17,7 @@ use futures::stream::Stream;
 use rusoto_core::ByteStream;
 use tui::widgets::ListState;
 
+/// Interactive list of entries representing files in an S3 bucket
 pub struct S3List {
     client: S3Provider,
     s3_prefix: Mutex<String>,
@@ -40,6 +41,10 @@ impl S3List {
             .expect("Couldn't lock s3_prefix mutex")
     }
 
+    /// Maps given io::Error to a ComponentError
+    ///
+    /// * `err` - io::Error to map
+    /// * `file` - OPTIONAL path to the file which caused the error
     fn handle_err(err: S3Error, file: Option<&str>) -> ComponentError {
         ComponentError::new(
             String::from("S3"),

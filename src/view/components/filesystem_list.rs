@@ -18,6 +18,7 @@ use super::{
     Navigatable, SelectableEntry, State, StatefulContainer,
 };
 
+/// Interactive list of entries representing files in the local filesystem
 pub struct FilesystemList {
     user: String,
     curr_path: Arc<Mutex<PathBuf>>,
@@ -42,6 +43,10 @@ impl FilesystemList {
             .expect("Clouldn't lock curr_path mutex")
     }
 
+    /// Maps given io::Error to a ComponentError
+    ///
+    /// * `err` - io::Error to map
+    /// * `file` - OPTIONAL path to the file which caused the error
     fn handle_error(err: io::Error, file: Option<&str>) -> ComponentError {
         let message = match err.kind() {
             io::ErrorKind::NotFound => "File couldn't be found",
