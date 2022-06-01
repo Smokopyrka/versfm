@@ -97,7 +97,9 @@ impl Navigatable for FilesystemList {
             .to_str()
             .expect("Couldn't convert current path to string");
         if let Some(selected) = self.get_name_of_selected() {
-            let new_path = append_path_to_dir(curr_path_str, &selected);
+            let mut new_path = append_path_to_dir(curr_path_str, &selected);
+            // Removes last '/' from directory name
+            new_path.pop();
             let new_path = Path::new(&new_path);
             let metadata = fs::metadata(new_path);
             if metadata.is_ok() && metadata.unwrap().is_dir() {
