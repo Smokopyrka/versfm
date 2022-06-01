@@ -109,7 +109,7 @@ pub fn get_files_list(path: &Path) -> Result<Vec<FilesystemObject>, io::Error> {
     }
 }
 
-/// Retruns the file stream of a file with given path
+/// Returns the file stream of a file with given path
 ///
 /// # Arguments
 ///
@@ -153,7 +153,7 @@ pub fn remove_file(path: &Path) -> Result<(), io::Error> {
     if fs::metadata(path)?.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "Deleteion of directories is unsupported!",
+            "Deletion of directories is unsupported!",
         ));
     }
     fs::remove_file(path)

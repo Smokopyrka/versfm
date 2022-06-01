@@ -35,7 +35,7 @@ fn spawn_sender() -> Receiver<Event<KeyEvent>> {
                 .checked_sub(last_tick.elapsed())
                 .unwrap_or_else(|| Duration::from_secs(0));
 
-            if event::poll(timeout).expect("Timeout occured while polling event") {
+            if event::poll(timeout).expect("Timeout ocurred while polling event") {
                 if let CEvent::Key(key) = event::read().expect("Couldn't read key") {
                     if key.code == KeyCode::Esc {
                         tx.send(Event::Shutdown)
@@ -97,7 +97,7 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     let left_pane = get_pane(&args.left_pane).await;
     let right_pane = get_pane(&args.right_pane).await;
 
-    let terminal = capture_terminal().expect("Coudn't capture terminal");
+    let terminal = capture_terminal().expect("Couldn't capture terminal");
     let mut main_screen = DualPaneList::new(terminal, left_pane, right_pane).await;
 
     let input_channel = spawn_sender();
@@ -126,7 +126,7 @@ struct Args {
     /// Provider for the right pane [Options: "fs", "s3"]
     #[clap(long, short, default_value = "fs")]
     right_pane: String,
-    /// Name of the aws region your bucket is localized in
+    /// Name of the aws region your bucket is located in
     #[clap(long)]
     aws_region: Option<String>,
     /// Name of the bucket you want to connect to

@@ -1,4 +1,4 @@
-//! Module defining componenets that are later used when
+//! Module defining components that are later used when
 //! composing screens
 use std::{pin::Pin, sync::MutexGuard};
 
@@ -23,7 +23,7 @@ use self::err::ComponentError;
 #[derive(Clone, PartialEq)]
 pub enum State {
     Unselected,
-    Proccessed,
+    Processed,
     ToMove,
     ToDelete,
     ToCopy,
@@ -56,7 +56,7 @@ impl<T> SelectableEntry<T> {
     /// Selects the entry currently under cursor giving
     /// it the state provided in `new` function argument
     fn select(&mut self, new: State) {
-        if new == State::Proccessed {
+        if new == State::Processed {
             self.state = new;
             return;
         }
@@ -90,7 +90,7 @@ pub trait StatefulContainer {
     fn previous(&self);
     /// Selects the next entry of the container
     fn next(&self);
-    /// Retruns the current state of the container
+    /// Returns the current state of the container
     fn get_current(&self) -> ListState;
     /// Clears the current state of the container
     fn clear_state(&self);
@@ -385,7 +385,7 @@ fn transform_list(options: MutexGuard<Vec<SelectableEntry<FilenameEntry>>>) -> V
                     style = style.bg(Color::Green);
                     text.push_str(" [C]");
                 }
-                State::Proccessed => {
+                State::Processed => {
                     style = style.bg(Color::DarkGray);
                     text.push_str(" [/]");
                 }

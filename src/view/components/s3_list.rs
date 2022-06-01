@@ -59,10 +59,10 @@ impl S3List {
 
 impl ASelectableFilenameList for S3List {
     fn lock_items(&self) -> MutexGuard<Vec<SelectableEntry<FilenameEntry>>> {
-        self.items.lock().expect("Clouldn't lock items mutex")
+        self.items.lock().expect("Couldn't lock items mutex")
     }
     fn lock_state(&self) -> MutexGuard<ListState> {
-        self.state.lock().expect("Clouldn't lock state mutex")
+        self.state.lock().expect("Couldn't lock state mutex")
     }
 }
 
@@ -111,7 +111,7 @@ impl FileCRUD for S3List {
     }
 
     fn start_processing_item(&self, file_name: &str) {
-        self.set_item_state_by_filename(file_name, State::Proccessed);
+        self.set_item_state_by_filename(file_name, State::Processed);
     }
 
     fn stop_processing_item(&self, file_name: &str) {

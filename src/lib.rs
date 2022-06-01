@@ -50,10 +50,10 @@ pub mod utils {
     /// );
     ///
     /// ```
-    /// **Ommiting the first or last '/' character in a base path
+    /// **Omitting the first or last '/' character in a base path
     /// is valid. The function will produce the same result regardless**
     ///
-    /// * Ommiting the last '/' character
+    /// * Omitting the last '/' character
     /// ```
     /// use versfm::utils::append_path_to_dir;
     /// assert_eq!(
@@ -61,7 +61,7 @@ pub mod utils {
     ///     "/home/user/some_path"
     /// );
     /// ```
-    /// * Ommiting the first '/' character
+    /// * Omitting the first '/' character
     /// ```
     /// use versfm::utils::append_path_to_dir;
     /// assert_eq!(
@@ -69,7 +69,7 @@ pub mod utils {
     ///     "/home/user/some_path"
     /// );
     /// ```
-    /// * Ommiting both the first and the last '/' characters
+    /// * Omitting both the first and the last '/' characters
     /// ```
     /// use versfm::utils::append_path_to_dir;
     /// assert_eq!(

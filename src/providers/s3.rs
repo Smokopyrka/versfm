@@ -78,7 +78,7 @@ impl S3Provider {
             },
             _ => S3Error {
                 code: String::from("Unknown Error"),
-                message: String::from("Unknown error occured"),
+                message: String::from("Unknown error ocurred"),
             },
         }
     }
@@ -118,10 +118,10 @@ impl S3Provider {
         let result = response
             .into_iter()
             .filter(|i| {
-                let key = i.key.to_owned().expect("Couldn't obrain S3 object key");
+                let key = i.key.to_owned().expect("Couldn't obtain S3 object key");
                 let (prefix, file_name) = key.split_at(prefix.len());
                 // Ensures function returns only top-level files and directories
-                // for given prefix. (entries like foo/bar.txt are ommited)
+                // for given prefix. (entries like foo/bar.txt are omitted)
                 match (prefix, file_name) {
                     ("", name) => match name.find("/") {
                         None => true,
@@ -130,8 +130,8 @@ impl S3Provider {
                     (_, "") => false,
                     (_, name) => {
                         let last_char = name.chars().last().expect("Name is empty");
-                        let seperator_count = name.matches('/').count();
-                        seperator_count == 0 || (seperator_count == 1 && last_char == '/')
+                        let separator_count = name.matches('/').count();
+                        separator_count == 0 || (separator_count == 1 && last_char == '/')
                     }
                 }
             })

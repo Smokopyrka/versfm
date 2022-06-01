@@ -40,7 +40,7 @@ impl FilesystemList {
     fn lock_curr_path(&self) -> MutexGuard<PathBuf> {
         self.curr_path
             .lock()
-            .expect("Clouldn't lock curr_path mutex")
+            .expect("Couldn't lock curr_path mutex")
     }
 
     /// Maps given io::Error to a ComponentError
@@ -59,7 +59,7 @@ impl FilesystemList {
                 "Operation was not able to complete"
             }
             io::ErrorKind::Unsupported => "This operation is not supported",
-            _ => "Unexpected error occured",
+            _ => "Unexpected error ocurred",
         };
         ComponentError::new(
             String::from("Local Filesystem"),
@@ -74,11 +74,11 @@ impl FilesystemList {
 
 impl ASelectableFilenameList for FilesystemList {
     fn lock_items(&self) -> MutexGuard<Vec<SelectableEntry<FilenameEntry>>> {
-        self.items.lock().expect("Clouldn't lock items mutex")
+        self.items.lock().expect("Couldn't lock items mutex")
     }
 
     fn lock_state(&self) -> MutexGuard<ListState> {
-        self.state.lock().expect("Clouldn't lock state mutex")
+        self.state.lock().expect("Couldn't lock state mutex")
     }
 }
 
@@ -125,7 +125,7 @@ impl FileCRUD for FilesystemList {
     }
 
     fn start_processing_item(&self, file_name: &str) {
-        self.set_item_state_by_filename(file_name, State::Proccessed);
+        self.set_item_state_by_filename(file_name, State::Processed);
     }
 
     fn stop_processing_item(&self, file_name: &str) {

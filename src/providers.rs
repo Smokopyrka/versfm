@@ -12,7 +12,7 @@ pub mod s3;
 ///
 /// * `File` - Regular File
 /// * `Directory` - Directory File
-/// * `Unknown` - File of unknown type (possiby a result
+/// * `Unknown` - File of unknown type (possibly a result
 /// of the program not being able to read its metadata)
 #[derive(Clone)]
 pub enum Kind {

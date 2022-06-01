@@ -168,7 +168,7 @@ impl DualPaneList {
         }
     }
 
-    /// Sprawns a copy task for given file
+    /// Spawns a copy task for given file
     fn spawn_copy_task(
         &self,
         from: Arc<Box<dyn FileCRUDListWidget>>,
